@@ -37,9 +37,19 @@ export default {
       const apiKey = env.OPENAI_API_KEY;
       const model = env.OPENAI_MODEL;
 
-      if (!url || !anonKey || !apiKey || !model) {
-        throw new Error("Konfigurasi API belum lengkap.");
-      }
+      const missing = [];
+
+if (!url) missing.push("SUPABASE_URL");
+if (!anonKey) missing.push("SUPABASE_ANON_KEY");
+if (!apiKey) missing.push("OPENAI_API_KEY");
+if (!model) missing.push("OPENAI_MODEL");
+
+if (missing.length) {
+  return Response.json({
+    success: false,
+    error: "Konfigurasi belum terbaca: " + missing.join(", ")
+  }, { status: 500, headers });
+}
 
       const authHeader = request.headers.get("Authorization");
 
