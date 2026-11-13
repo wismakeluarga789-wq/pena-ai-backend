@@ -94,7 +94,7 @@ if (missing.length) {
 
       // Proses penulisan AI
       const aiResponse = await fetch(
-        "https://api.openai.com/v1/responses",
+        "https://api.groq.com/openai/v1/responses",
         {
           method: "POST",
           headers: {
