@@ -34,15 +34,15 @@ export default {
     try {
       const url = env.SUPABASE_URL;
       const anonKey = env.SUPABASE_ANON_KEY;
-      const apiKey = env.OPENAI_API_KEY;
-      const model = env.OPENAI_MODEL;
+      const apiKey = env.GROQ_API_KEY;
+      const model = "openai/gpt-oss-120b";
 
       const missing = [];
 
 if (!url) missing.push("SUPABASE_URL");
 if (!anonKey) missing.push("SUPABASE_ANON_KEY");
-if (!apiKey) missing.push("OPENAI_API_KEY");
-if (!model) missing.push("OPENAI_MODEL");
+if (!apiKey) missing.push("GROQ_API_KEY");
+if (!model) missing.push("GROQ_MODEL");
 
 if (missing.length) {
   return Response.json({
