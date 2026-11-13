@@ -91,7 +91,6 @@ if (missing.length) {
           { status: 400, headers }
         );
       }
-
       // Proses penulisan AI
       const aiResponse = await fetch(
         "https://api.groq.com/openai/v1/responses",
