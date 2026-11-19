@@ -26,6 +26,7 @@ export default {
     }
 
     try {
+
       if (request.method === "GET") {
         return json(
           {
@@ -67,10 +68,7 @@ export default {
         auth.replace("Bearer ", "").trim();
 
       const user =
-        await getSupabaseUser(
-          env,
-          token
-        );
+        await getSupabaseUser(env, token);
 
       if (!user) {
         return json(
@@ -159,7 +157,7 @@ export default {
 
 
 /* =====================================================
-   RESPONSE
+   JSON RESPONSE
 ===================================================== */
 
 function json(
@@ -182,7 +180,7 @@ function json(
 
 
 /* =====================================================
-   SUPABASE USER
+   GET SUPABASE USER
 ===================================================== */
 
 async function getSupabaseUser(
@@ -255,7 +253,7 @@ async function supabaseFetch(
 async function callGroq(
   env,
   messages,
-  maxTokens = 9000
+  maxTokens
 ) {
 
   const response =
@@ -283,7 +281,7 @@ async function callGroq(
             maxTokens,
 
           temperature:
-            0.85
+            0.82
         })
       }
     );
@@ -351,7 +349,6 @@ async function callGroq(
   }
 
   if (!text.trim()) {
-
     throw new Error(
       "AI tidak menghasilkan tulisan."
     );
@@ -425,45 +422,32 @@ async function tulisCepat(
   }
 
   const systemPrompt = `
-Kamu adalah PENA AI, penulis novel berbahasa Indonesia.
+Kamu adalah PENA AI, penulis novel
+berbahasa Indonesia.
 
-Tugasmu adalah menulis prosa fiksi yang terasa seperti novel sungguhan.
+Tulis prosa fiksi yang terasa seperti
+novel sungguhan.
 
-ATURAN MUTLAK:
+Jangan membuat outline.
+Jangan membuat bullet.
+Jangan membuat tabel.
+Jangan menggunakan Markdown.
+Jangan membuat laporan.
+Jangan menjelaskan proses menulis.
 
 Tulis langsung adegan cerita.
 
-Jangan membuat outline.
+Gunakan paragraf naratif yang natural,
+dialog yang hidup,
+suasana,
+tindakan,
+pikiran,
+emosi,
+konflik,
+dan perkembangan karakter.
 
-Jangan membuat daftar.
-
-Jangan menggunakan bullet.
-
-Jangan menggunakan Markdown.
-
-Jangan menggunakan format laporan.
-
-Jangan menjelaskan proses penulisan.
-
-Jangan menulis "Bab 1:" kecuali diminta.
-
-Gunakan paragraf naratif yang natural.
-
-Gunakan dialog yang hidup.
-
-Bangun suasana tempat.
-
-Tampilkan tindakan tokoh.
-
-Tampilkan pikiran dan emosi tokoh melalui cerita.
-
-Jaga kesinambungan sebab dan akibat.
-
-Jangan mengulang kalimat hanya untuk memperpanjang tulisan.
-
-Jika cerita memiliki konflik, kembangkan secara bertahap.
-
-Hasil akhir harus berupa prosa novel yang siap dibaca.
+Hasil harus berupa prosa novel
+yang siap dibaca.
 `;
 
   const userPrompt = `
@@ -473,9 +457,10 @@ ${judul}
 Ide cerita:
 ${prompt}
 
-Kembangkan ide tersebut menjadi cerita fiksi yang utuh.
+Kembangkan menjadi cerita fiksi
+yang utuh dan menarik.
 
-Mulailah langsung dari adegan cerita.
+Mulai langsung dari adegan cerita.
 `;
 
   const text =
@@ -485,7 +470,6 @@ Mulailah langsung dari adegan cerita.
         {
           role:
             "system",
-
           content:
             systemPrompt
         },
@@ -493,12 +477,11 @@ Mulailah langsung dari adegan cerita.
         {
           role:
             "user",
-
           content:
             userPrompt
         }
       ],
-      9000
+      6000
     );
 
   const clean =
@@ -538,7 +521,6 @@ Mulailah langsung dari adegan cerita.
     );
 
   if (!history.ok) {
-
     console.error(
       "Gagal menyimpan riwayat:",
       await history.text()
@@ -549,10 +531,8 @@ Mulailah langsung dari adegan cerita.
     {
       success: true,
       text: clean,
-
       jumlah_kata:
         hitungKata(clean),
-
       model:
         "openai/gpt-oss-120b"
     },
@@ -614,7 +594,6 @@ async function buatNovel(
 
     status:
       "aktif"
-
   };
 
   const response =
@@ -640,20 +619,17 @@ async function buatNovel(
     await response.text();
 
   if (!response.ok) {
-
     throw new Error(
       `Gagal membuat novel: ${raw}`
     );
   }
 
-  let result;
+  let result = [];
 
   try {
     result =
       JSON.parse(raw);
-  } catch {
-    result = [];
-  }
+  } catch {}
 
   return json(
     {
@@ -702,9 +678,9 @@ async function tulisBab(
   }
 
 
-  /* -----------------------------------------------
-     AMBIL DATA NOVEL
-  ------------------------------------------------ */
+  /* ===================================================
+     NOVEL
+  =================================================== */
 
   const novelResponse =
     await supabaseFetch(
@@ -752,9 +728,9 @@ async function tulisBab(
     novels[0];
 
 
-  /* -----------------------------------------------
-     AMBIL KARAKTER
-  ------------------------------------------------ */
+  /* ===================================================
+     KARAKTER
+  =================================================== */
 
   const characterResponse =
     await supabaseFetch(
@@ -771,23 +747,20 @@ async function tulisBab(
 
   if (characterResponse.ok) {
 
-    const raw =
-      await characterResponse.text();
-
     characters =
-      JSON.parse(raw);
+      await characterResponse.json();
   }
 
 
-  /* -----------------------------------------------
-     AMBIL MEMORY
-  ------------------------------------------------ */
+  /* ===================================================
+     MEMORY
+  =================================================== */
 
   const memoryResponse =
     await supabaseFetch(
       env,
       token,
-      `novel_memory?novel_id=eq.${novelId}&user_id=eq.${user.id}&select=*&order=created_at.desc&limit=30`,
+      `novel_memory?novel_id=eq.${novelId}&user_id=eq.${user.id}&select=*&order=created_at.desc&limit=20`,
       {
         method:
           "GET"
@@ -798,23 +771,20 @@ async function tulisBab(
 
   if (memoryResponse.ok) {
 
-    const raw =
-      await memoryResponse.text();
-
     memories =
-      JSON.parse(raw);
+      await memoryResponse.json();
   }
 
 
-  /* -----------------------------------------------
-     AMBIL BAB SEBELUMNYA
-  ------------------------------------------------ */
+  /* ===================================================
+     BAB TERAKHIR
+  =================================================== */
 
   const chapterResponse =
     await supabaseFetch(
       env,
       token,
-      `novel_bab?novel_id=eq.${novelId}&user_id=eq.${user.id}&select=id,nomor_bab,judul_bab,ringkasan,isi_bab,created_at&order=nomor_bab.desc&limit=5`,
+      `novel_bab?novel_id=eq.${novelId}&user_id=eq.${user.id}&select=id,nomor_bab,judul_bab,ringkasan,isi_bab&order=nomor_bab.desc&limit=3`,
       {
         method:
           "GET"
@@ -825,17 +795,10 @@ async function tulisBab(
 
   if (chapterResponse.ok) {
 
-    const raw =
-      await chapterResponse.text();
-
     chapters =
-      JSON.parse(raw);
+      await chapterResponse.json();
   }
 
-
-  /* -----------------------------------------------
-     NOMOR BAB
-  ------------------------------------------------ */
 
   const nomorBab =
     Number(
@@ -843,15 +806,19 @@ async function tulisBab(
     ) + 1;
 
 
-  /* -----------------------------------------------
-     KONTEKS KARAKTER
-  ------------------------------------------------ */
+  /* ===================================================
+     KARAKTER TEXT
+  =================================================== */
 
-  const characterText =
-    characters.length
-      ? characters.map(c => {
+  let characterText =
+    "Belum ada karakter.";
 
-          return `
+  if (characters.length) {
+
+    characterText =
+      characters.map(c => {
+
+        return `
 Nama: ${c.nama}
 Umur: ${c.umur || "-"}
 Jenis kelamin: ${c.jenis_kelamin || "-"}
@@ -864,19 +831,23 @@ Rahasia: ${c.rahasia || "-"}
 Catatan: ${c.catatan || "-"}
 `;
 
-        }).join("\n")
-      : "Belum ada data karakter.";
+      }).join("\n");
+  }
 
 
-  /* -----------------------------------------------
-     KONTEKS MEMORY
-  ------------------------------------------------ */
+  /* ===================================================
+     MEMORY TEXT
+  =================================================== */
 
-  const memoryText =
-    memories.length
-      ? memories.map(m => {
+  let memoryText =
+    "Belum ada memory cerita.";
 
-          return `
+  if (memories.length) {
+
+    memoryText =
+      memories.map(m => {
+
+        return `
 Tipe: ${m.tipe || "-"}
 Judul: ${m.judul || "-"}
 Isi: ${m.isi || "-"}
@@ -884,23 +855,30 @@ Bab terkait: ${m.bab_terkait || "-"}
 Penting: ${m.penting ? "Ya" : "Tidak"}
 `;
 
-        }).join("\n")
-      : "Belum ada memory cerita.";
+      }).join("\n");
+  }
 
 
-  /* -----------------------------------------------
-     KONTEKS BAB SEBELUMNYA
-  ------------------------------------------------ */
+  /* ===================================================
+     BAB SEBELUMNYA
+  =================================================== */
 
-  const previousChapterText =
-    chapters.length
-      ? chapters
-          .reverse()
-          .map(c => {
+  let previousText =
+    "Belum ada bab sebelumnya.";
 
-            return `
+  if (chapters.length) {
+
+    const ordered =
+      [...chapters].reverse();
+
+    previousText =
+      ordered.map(c => {
+
+        return `
 BAB ${c.nomor_bab}
-Judul: ${c.judul_bab || ""}
+
+Judul:
+${c.judul_bab || ""}
 
 Ringkasan:
 ${c.ringkasan || ""}
@@ -909,14 +887,13 @@ Isi:
 ${c.isi_bab || ""}
 `;
 
-          })
-          .join("\n\n")
-      : "Belum ada bab sebelumnya.";
+      }).join("\n\n");
+  }
 
 
-  /* -----------------------------------------------
+  /* ===================================================
      MODE DEWASA
-  ------------------------------------------------ */
+  =================================================== */
 
   let adultInstruction = "";
 
@@ -927,129 +904,121 @@ ${c.isi_bab || ""}
   ) {
 
     adultInstruction = `
-Mode cerita adalah Dewasa 18+.
+Novel menggunakan mode Dewasa 18+.
 
 Pastikan seluruh tokoh yang terlibat
 dalam hubungan romantis adalah orang dewasa.
 
-Cerita boleh memiliki tema romantis,
-hubungan emosional, ketegangan,
-dan situasi dewasa secara umum,
+Tema romantis dan hubungan dewasa
+boleh menjadi bagian cerita,
 tetapi jangan menulis adegan seksual
-yang eksplisit atau pornografis.
+secara eksplisit atau pornografis.
 `;
   }
 
 
-  /* -----------------------------------------------
-     PROMPT UTAMA
-  ------------------------------------------------ */
+  /* ===================================================
+     SYSTEM PROMPT
+  =================================================== */
 
   const systemPrompt = `
-Kamu adalah PENA AI, mesin penulis novel
+Kamu adalah PENA AI,
+penulis novel profesional
 berbahasa Indonesia.
 
-Kamu sedang menulis sebuah novel berkelanjutan.
-
-Ini bukan artikel.
-Ini bukan laporan.
-Ini bukan makalah.
-Ini bukan outline.
-Ini bukan ringkasan.
+Kamu sedang menulis satu bab
+dari sebuah novel yang berkelanjutan.
 
 HASIL HARUS LANGSUNG BERUPA PROSA NOVEL.
 
-Target panjang bab:
-sekitar 2.000 sampai 2.500 kata.
-
-Usahakan mendekati target tersebut
-tanpa mengisi cerita dengan pengulangan
-atau kalimat yang tidak berguna.
+Target:
+sekitar 2.000–2.300 kata.
 
 PENTING:
 
-Jangan membuat bullet.
+Jangan membuat outline.
 
 Jangan membuat daftar.
+
+Jangan menggunakan bullet.
 
 Jangan menggunakan Markdown.
 
 Jangan membuat tabel.
 
-Jangan menulis penjelasan kepada pengguna.
+Jangan membuat laporan.
 
-Jangan menulis catatan penulis.
+Jangan memberikan penjelasan.
 
 Jangan menulis "Berikut babnya".
 
-Jangan membuat outline.
+Jangan menulis "Bab ${nomorBab}"
+sebagai heading.
 
-Jangan merangkum cerita sebagai pengganti adegan.
+Jangan membuat ringkasan
+sebagai pengganti cerita.
 
-Jangan memadatkan seluruh kejadian
-menjadi beberapa paragraf pendek.
+Tulis langsung adegan.
 
-Tulis adegan secara utuh.
-
-Gunakan paragraf novel yang natural.
+Gunakan paragraf yang natural.
 
 Gunakan dialog yang hidup.
 
-Gunakan tindakan dan reaksi tokoh.
+Gunakan tindakan tokoh.
 
-Bangun suasana tempat dan waktu.
+Gunakan ekspresi,
+pikiran,
+emosi,
+suasana,
+konflik,
+dan konsekuensi.
 
-Perlihatkan emosi melalui tindakan,
-dialog, pikiran, ekspresi,
-dan reaksi tubuh secara wajar.
+Jangan mempercepat semua kejadian
+hanya agar cerita cepat selesai.
 
-Kembangkan konflik secara bertahap.
+Kembangkan adegan secara bertahap.
 
-Beri ruang bagi tokoh untuk berbicara,
-berpikir, bergerak, bereaksi,
-dan mengambil keputusan.
+Setiap kejadian harus memiliki
+sebab dan akibat.
 
-Jaga hubungan antar tokoh.
+Jaga konsistensi karakter.
 
-Jaga kontinuitas fakta.
+Jaga konsistensi hubungan.
 
-Jangan mengubah umur,
-nama, latar belakang,
-hubungan, atau sifat karakter
-tanpa alasan cerita.
+Jaga konsistensi tempat,
+waktu,
+dan fakta cerita.
 
-Jangan mengulang kejadian
-yang sudah selesai pada bab sebelumnya
-kecuali diperlukan sebagai ingatan
-atau konteks.
+Jangan mengulang isi bab sebelumnya
+secara panjang.
 
-Bab harus terasa sebagai kelanjutan alami
-dari bab sebelumnya.
+Bab baru harus terasa sebagai
+kelanjutan langsung dari cerita.
 
-Jangan menyelesaikan seluruh konflik utama
-terlalu cepat.
+Jangan menyelesaikan semua konflik utama
+dalam satu bab.
 
-Bangun perkembangan cerita
-agar novel dapat terus berlanjut
-ke bab-bab berikutnya.
+Buat perkembangan yang membuka
+kemungkinan bab berikutnya.
 
-Akhiri bab dengan perkembangan,
-konflik baru,
-pertanyaan,
+Akhiri dengan situasi,
 keputusan,
-kejutan,
-atau situasi yang membuat pembaca
-ingin melanjutkan ke bab berikutnya.
-
-Jika terdapat dialog,
-buat dialog terasa alami dan sesuai
-dengan kepribadian masing-masing tokoh.
+informasi,
+konflik,
+atau kejadian
+yang membuat pembaca ingin
+membaca bab selanjutnya.
 
 ${adultInstruction}
 `;
 
+
+  /* ===================================================
+     USER PROMPT
+  =================================================== */
+
   const userPrompt = `
-INFORMASI NOVEL
+NOVEL
 
 Judul:
 ${novel.judul}
@@ -1057,7 +1026,7 @@ ${novel.judul}
 Genre:
 ${novel.genre || "Drama"}
 
-Gaya narasi:
+Gaya:
 ${novel.gaya || "Natural"}
 
 Nuansa:
@@ -1069,11 +1038,8 @@ ${novel.mode || "Normal"}
 Premis:
 ${novel.premis || ""}
 
-Target jumlah bab:
-${novel.target_bab || 100}
-
 Bab yang akan ditulis:
-Bab ${nomorBab}
+${nomorBab}
 
 
 KARAKTER
@@ -1088,35 +1054,36 @@ ${memoryText}
 
 BAB-BAB TERAKHIR
 
-${previousChapterText}
+${previousText}
 
 
 TUGAS
 
-Tulis Bab ${nomorBab} dari novel ini.
+Tulislah Bab ${nomorBab}.
 
-Panjang target sekitar 2.000–2.500 kata.
+Target panjang sekitar
+2.000–2.300 kata.
 
 Mulai langsung dari adegan.
 
-Jangan memberikan judul bab
-sebagai heading Markdown.
+Jangan membuat heading.
 
-Jangan membuat daftar.
+Jangan membuat bullet.
 
-Jangan memberikan ringkasan
-di awal atau akhir.
+Jangan membuat ringkasan.
 
-Jangan menjelaskan apa yang kamu lakukan.
+Jangan menjelaskan proses penulisan.
 
-Tulislah seperti halaman novel
+Jangan mengakhiri cerita terlalu cepat.
+
+Tulis seperti halaman novel
 yang langsung siap dibaca.
 `;
 
 
-  /* -----------------------------------------------
-     GENERATE
-  ------------------------------------------------ */
+  /* ===================================================
+     SATU PANGGILAN GROQ
+  =================================================== */
 
   let chapterText =
     await callGroq(
@@ -1138,7 +1105,7 @@ yang langsung siap dibaca.
             userPrompt
         }
       ],
-      12000
+      6500
     );
 
 
@@ -1148,155 +1115,23 @@ yang langsung siap dibaca.
     );
 
 
-  let jumlahKata =
+  const jumlahKata =
     hitungKata(
       chapterText
     );
 
 
-  /* -----------------------------------------------
-     JIKA TERLALU PENDEK
-  ------------------------------------------------ */
+  /* ===================================================
+     JUDUL BAB TANPA PANGGILAN AI
+  =================================================== */
 
-  if (jumlahKata < 1600) {
-
-    const continuePrompt = `
-Cerita yang baru ditulis masih terlalu pendek.
-
-Jangan mengulang paragraf sebelumnya.
-
-Lanjutkan cerita secara langsung
-dari kalimat terakhir.
-
-Tambahkan adegan baru yang relevan
-dengan konflik dan karakter.
-
-Kembangkan interaksi,
-dialog,
-suasana,
-tindakan,
-pikiran,
-reaksi,
-dan konsekuensi kejadian.
-
-Jangan membuat ringkasan.
-
-Jangan membuat bullet.
-
-Jangan menggunakan Markdown.
-
-Jangan menjelaskan proses penulisan.
-
-Teruskan prosa novel sampai total
-panjang bab mendekati 2.000–2.500 kata.
-
-Teks yang sudah ada:
-
-${chapterText}
-`;
-
-    const tambahan =
-      await callGroq(
-        env,
-        [
-          {
-            role:
-              "system",
-
-            content:
-              systemPrompt
-          },
-
-          {
-            role:
-              "user",
-
-            content:
-              continuePrompt
-          }
-        ],
-        5000
-      );
-
-    const tambahanClean =
-      bersihkanProsa(
-        tambahan
-      );
-
-    /*
-     * Model kadang mengulang cerita lama.
-     * Karena itu hanya tambahkan bagian
-     * yang memang dihasilkan setelah prompt
-     * lanjutan.
-     */
-
-    chapterText =
-      chapterText +
-      "\n\n" +
-      tambahanClean;
-
-    jumlahKata =
-      hitungKata(
-        chapterText
-      );
-  }
+  const judulBab =
+    `Bab ${nomorBab}`;
 
 
-  /* -----------------------------------------------
-     JUDUL BAB
-  ------------------------------------------------ */
-
-  const titlePrompt = `
-Berikan satu judul pendek
-untuk bab berikut.
-
-Judul harus cocok dengan isi bab.
-
-Hanya tulis judulnya.
-
-Jangan memakai Markdown.
-
-Jangan menulis "Bab ${nomorBab}".
-
-Isi bab:
-
-${chapterText.slice(0, 6000)}
-`;
-
-  let judulBab =
-    await callGroq(
-      env,
-      [
-        {
-          role:
-            "system",
-
-          content:
-            "Kamu adalah editor novel."
-        },
-
-        {
-          role:
-            "user",
-
-          content:
-            titlePrompt
-        }
-      ],
-      200
-    );
-
-  judulBab =
-    bersihkanProsa(
-      judulBab
-    )
-      .replace(/^["']|["']$/g, "")
-      .trim();
-
-
-  /* -----------------------------------------------
+  /* ===================================================
      SIMPAN BAB
-  ------------------------------------------------ */
+  =================================================== */
 
   const chapterData = {
 
@@ -1310,8 +1145,7 @@ ${chapterText.slice(0, 6000)}
       nomorBab,
 
     judul_bab:
-      judulBab ||
-      `Bab ${nomorBab}`,
+      judulBab,
 
     isi_bab:
       chapterText,
@@ -1324,7 +1158,6 @@ ${chapterText.slice(0, 6000)}
 
     status:
       "selesai"
-
   };
 
 
@@ -1360,9 +1193,9 @@ ${chapterText.slice(0, 6000)}
   }
 
 
-  /* -----------------------------------------------
-     UPDATE JUMLAH BAB
-  ------------------------------------------------ */
+  /* ===================================================
+     UPDATE NOVEL
+  =================================================== */
 
   const updateResponse =
     await supabaseFetch(
@@ -1394,15 +1227,15 @@ ${chapterText.slice(0, 6000)}
   if (!updateResponse.ok) {
 
     console.error(
-      "Gagal update bab_selesai:",
+      "Gagal update novel:",
       await updateResponse.text()
     );
   }
 
 
-  /* -----------------------------------------------
-     SIMPAN PENGGUNAAN AI
-  ------------------------------------------------ */
+  /* ===================================================
+     CATAT PENGGUNAAN AI
+  =================================================== */
 
   try {
 
@@ -1444,15 +1277,15 @@ ${chapterText.slice(0, 6000)}
   } catch (e) {
 
     console.error(
-      "Gagal menyimpan penggunaan AI:",
+      "Gagal mencatat penggunaan AI:",
       e
     );
   }
 
 
-  /* -----------------------------------------------
-     RESPONSE
-  ------------------------------------------------ */
+  /* ===================================================
+     HASIL
+  =================================================== */
 
   return json(
     {
@@ -1543,7 +1376,6 @@ async function updateMemory(
             body.bab_terkait
           )
         : null
-
   };
 
   const response =
@@ -1577,14 +1409,12 @@ async function updateMemory(
     );
   }
 
-  let result;
+  let result = [];
 
   try {
     result =
       JSON.parse(raw);
-  } catch {
-    result = [];
-  }
+  } catch {}
 
   return json(
     {
