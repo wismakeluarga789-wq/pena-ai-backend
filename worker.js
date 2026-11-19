@@ -1,1432 +1,672 @@
-export default {
-  async fetch(request, env) {
-    const origin = request.headers.get("Origin") || "";
-
-    const corsHeaders = {
-      "Access-Control-Allow-Origin":
-        origin === "https://pena-ai-engine.pages.dev"
-          ? origin
-          : "https://pena-ai-engine.pages.dev",
-
-      "Access-Control-Allow-Methods":
-        "GET, POST, OPTIONS",
-
-      "Access-Control-Allow-Headers":
-        "Content-Type, Authorization",
-
-      "Access-Control-Max-Age":
-        "86400"
-    };
-
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders
-      });
-    }
-
-    try {
-
-      if (request.method === "GET") {
-        return json(
-          {
-            success: true,
-            app: "PENA AI",
-            status: "Backend aktif"
-          },
-          200,
-          corsHeaders
-        );
-      }
-
-      if (request.method !== "POST") {
-        return json(
-          {
-            success: false,
-            error: "Method tidak didukung."
-          },
-          405,
-          corsHeaders
-        );
-      }
-
-      const auth =
-        request.headers.get("Authorization") || "";
-
-      if (!auth.startsWith("Bearer ")) {
-        return json(
-          {
-            success: false,
-            error: "Token login tidak ditemukan."
-          },
-          401,
-          corsHeaders
-        );
-      }
-
-      const token =
-        auth.replace("Bearer ", "").trim();
-
-      const user =
-        await getSupabaseUser(env, token);
-
-      if (!user) {
-        return json(
-          {
-            success: false,
-            error: "Sesi login tidak valid."
-          },
-          401,
-          corsHeaders
-        );
-      }
-
-      const body =
-        await request.json();
-
-      const action =
-        body.action || "write";
-
-      if (action === "write") {
-        return await tulisCepat(
-          body,
-          user,
-          token,
-          env,
-          corsHeaders
-        );
-      }
-
-      if (action === "create_novel") {
-        return await buatNovel(
-          body,
-          user,
-          token,
-          env,
-          corsHeaders
-        );
-      }
-
-      if (action === "write_chapter") {
-        return await tulisBab(
-          body,
-          user,
-          token,
-          env,
-          corsHeaders
-        );
-      }
-
-      if (action === "update_memory") {
-        return await updateMemory(
-          body,
-          user,
-          token,
-          env,
-          corsHeaders
-        );
-      }
-
-      return json(
-        {
-          success: false,
-          error:
-            `Action "${action}" tidak dikenal.`
-        },
-        400,
-        corsHeaders
-      );
-
-    } catch (error) {
-
-      console.error(error);
-
-      return json(
-        {
-          success: false,
-          error:
-            error?.message ||
-            "Terjadi kesalahan pada server."
-        },
-        500,
-        corsHeaders
-      );
-    }
-  }
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
 };
 
+const SUPABASE_URL = env("SUPABASE_URL");
+const SUPABASE_ANON_KEY = env("SUPABASE_ANON_KEY");
+const GROQ_API_KEY = env("GROQ_API_KEY");
 
-/* =====================================================
-   JSON RESPONSE
-===================================================== */
+function env(name) {
+  return typeof globalThis[name] !== "undefined"
+    ? globalThis[name]
+    : null;
+}
 
-function json(
-  data,
-  status,
-  headers
-) {
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers: {
-        ...headers,
-        "Content-Type":
-          "application/json; charset=utf-8"
-      }
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json"
     }
-  );
+  });
 }
 
-
-/* =====================================================
-   GET SUPABASE USER
-===================================================== */
-
-async function getSupabaseUser(
-  env,
-  token
-) {
-
-  const response =
-    await fetch(
-      `${env.SUPABASE_URL}/auth/v1/user`,
-      {
-        method: "GET",
-
-        headers: {
-          "apikey":
-            env.SUPABASE_ANON_KEY,
-
-          "Authorization":
-            `Bearer ${token}`
-        }
-      }
-    );
-
-  if (!response.ok) {
-    return null;
-  }
-
-  return await response.json();
+function cleanText(text, max = 5000) {
+  if (!text) return "";
+  return String(text).slice(0, max);
 }
 
-
-/* =====================================================
-   SUPABASE FETCH
-===================================================== */
-
-async function supabaseFetch(
-  env,
-  token,
-  path,
-  options = {}
-) {
-
+async function supabaseFetch(path, options = {}) {
   const headers = {
-    "apikey":
-      env.SUPABASE_ANON_KEY,
-
-    "Authorization":
-      `Bearer ${token}`,
-
-    "Content-Type":
-      "application/json",
-
+    "apikey": SUPABASE_ANON_KEY,
+    "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+    "Content-Type": "application/json",
     ...(options.headers || {})
   };
 
-  return await fetch(
-    `${env.SUPABASE_URL}/rest/v1/${path}`,
-    {
-      ...options,
-      headers
-    }
-  );
+  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers
+  });
 }
 
+async function supabaseUserFetch(path, token, options = {}) {
+  const headers = {
+    "apikey": SUPABASE_ANON_KEY,
+    "Authorization": `Bearer ${token}`,
+    "Content-Type": "application/json",
+    ...(options.headers || {})
+  };
 
-/* =====================================================
-   GROQ
-===================================================== */
+  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers
+  });
+}
 
-async function callGroq(
-  env,
-  messages,
-  maxTokens
-) {
+async function getUser(token) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${token}`
+    }
+  });
 
-  const response =
-    await fetch(
-      "https://api.groq.com/openai/v1/responses",
-      {
-        method: "POST",
+  if (!res.ok) return null;
 
-        headers: {
-          "Content-Type":
-            "application/json",
+  return await res.json();
+}
 
-          "Authorization":
-            `Bearer ${env.GROQ_API_KEY}`
-        },
+async function callGroq(messages, maxOutputTokens = 4500) {
+  const response = await fetch(
+    "https://api.groq.com/openai/v1/responses",
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${GROQ_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-120b",
+        input: messages,
+        temperature: 0.85,
+        max_output_tokens: maxOutputTokens
+      })
+    }
+  );
 
-        body: JSON.stringify({
-          model:
-            "openai/gpt-oss-120b",
-
-          input:
-            messages,
-
-          max_output_tokens:
-            maxTokens,
-
-          temperature:
-            0.82
-        })
-      }
-    );
-
-  const raw =
-    await response.text();
+  const data = await response.json();
 
   if (!response.ok) {
-
     throw new Error(
-      `Groq error ${response.status}: ${raw}`
-    );
-  }
-
-  let data;
-
-  try {
-    data =
-      JSON.parse(raw);
-  } catch {
-    throw new Error(
-      "Respons AI tidak dapat dibaca."
+      `Groq error ${response.status}: ${JSON.stringify(data)}`
     );
   }
 
   let text = "";
 
-  if (
-    typeof data.output_text ===
-    "string"
-  ) {
-
-    text =
-      data.output_text;
-
-  } else if (
-    Array.isArray(data.output)
-  ) {
-
-    for (
-      const item of data.output
-    ) {
-
-      if (
-        Array.isArray(
-          item.content
-        )
-      ) {
-
-        for (
-          const content of item.content
-        ) {
-
-          if (
-            typeof content.text ===
-            "string"
-          ) {
-
-            text +=
-              content.text;
+  if (data.output_text) {
+    text = data.output_text;
+  } else if (Array.isArray(data.output)) {
+    for (const item of data.output) {
+      if (Array.isArray(item.content)) {
+        for (const content of item.content) {
+          if (content.text) {
+            text += content.text;
           }
         }
       }
     }
   }
 
-  if (!text.trim()) {
-    throw new Error(
-      "AI tidak menghasilkan tulisan."
-    );
-  }
-
   return text.trim();
 }
 
-
-/* =====================================================
-   BERSIHKAN PROSA
-===================================================== */
-
-function bersihkanProsa(text) {
-
-  return String(text || "")
-    .replace(/^```[a-zA-Z]*\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .replace(/^#{1,6}\s*/gm, "")
-    .replace(/^\s*[-*•]\s+/gm, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-
-/* =====================================================
-   HITUNG KATA
-===================================================== */
-
 function hitungKata(text) {
-
-  return String(text || "")
+  return text
     .trim()
     .split(/\s+/)
     .filter(Boolean)
     .length;
 }
 
+function ambilNomorBab(babList) {
+  if (!babList || !babList.length) return 1;
 
-/* =====================================================
-   TULIS CEPAT
-===================================================== */
+  let terbesar = 0;
 
-async function tulisCepat(
-  body,
-  user,
-  token,
-  env,
-  corsHeaders
-) {
-
-  const judul =
-    body.judul ||
-    "Tulisan Baru";
-
-  const prompt =
-    body.prompt ||
-    "";
-
-  if (!prompt.trim()) {
-
-    return json(
-      {
-        success: false,
-        error:
-          "Ide tulisan belum diisi."
-      },
-      400,
-      corsHeaders
-    );
+  for (const bab of babList) {
+    const n = Number(bab.nomor_bab || 0);
+    if (n > terbesar) terbesar = n;
   }
 
-  const systemPrompt = `
-Kamu adalah PENA AI, penulis novel
-berbahasa Indonesia.
-
-Tulis prosa fiksi yang terasa seperti
-novel sungguhan.
-
-Jangan membuat outline.
-Jangan membuat bullet.
-Jangan membuat tabel.
-Jangan menggunakan Markdown.
-Jangan membuat laporan.
-Jangan menjelaskan proses menulis.
-
-Tulis langsung adegan cerita.
-
-Gunakan paragraf naratif yang natural,
-dialog yang hidup,
-suasana,
-tindakan,
-pikiran,
-emosi,
-konflik,
-dan perkembangan karakter.
-
-Hasil harus berupa prosa novel
-yang siap dibaca.
-`;
-
-  const userPrompt = `
-Judul:
-${judul}
-
-Ide cerita:
-${prompt}
-
-Kembangkan menjadi cerita fiksi
-yang utuh dan menarik.
-
-Mulai langsung dari adegan cerita.
-`;
-
-  const text =
-    await callGroq(
-      env,
-      [
-        {
-          role:
-            "system",
-          content:
-            systemPrompt
-        },
-
-        {
-          role:
-            "user",
-          content:
-            userPrompt
-        }
-      ],
-      6000
-    );
-
-  const clean =
-    bersihkanProsa(text);
-
-  const history =
-    await supabaseFetch(
-      env,
-      token,
-      "riwayat_penulisan",
-      {
-        method:
-          "POST",
-
-        headers: {
-          "Prefer":
-            "return=minimal"
-        },
-
-        body:
-          JSON.stringify({
-            user_id:
-              user.id,
-
-            judul,
-
-            perintah:
-              prompt,
-
-            hasil_tulisan:
-              clean,
-
-            model_ai:
-              "openai/gpt-oss-120b"
-          })
-      }
-    );
-
-  if (!history.ok) {
-    console.error(
-      "Gagal menyimpan riwayat:",
-      await history.text()
-    );
-  }
-
-  return json(
-    {
-      success: true,
-      text: clean,
-      jumlah_kata:
-        hitungKata(clean),
-      model:
-        "openai/gpt-oss-120b"
-    },
-    200,
-    corsHeaders
-  );
+  return terbesar + 1;
 }
 
+async function tulisCepat(body, user, token) {
+  const judul = cleanText(body.judul, 300);
+  const perintah = cleanText(body.prompt, 5000);
 
-/* =====================================================
-   BUAT NOVEL
-===================================================== */
+  if (!perintah) {
+    throw new Error("Perintah tulisan belum diisi.");
+  }
 
-async function buatNovel(
-  body,
-  user,
-  token,
-  env,
-  corsHeaders
-) {
+  const mode = body.mode || "Normal";
 
+  const systemPrompt = `
+Kamu adalah penulis novel profesional berbahasa Indonesia.
+
+Tulis cerita dalam bentuk PROSA NOVEL yang benar.
+
+Jangan menggunakan:
+- Markdown
+- bullet
+- numbering
+- outline
+- laporan
+- penjelasan proses
+- kata "Bab" di dalam isi cerita
+
+Cerita harus terasa seperti novel yang benar-benar sedang berlangsung.
+
+Gunakan:
+- narasi
+- dialog
+- suasana
+- tindakan tokoh
+- pikiran tokoh
+- emosi
+- konflik
+- detail tempat
+- perkembangan kejadian
+
+Jangan menjelaskan kepada pembaca bahwa kamu adalah AI.
+
+Jika judul atau perintah mengandung instruksi teknis, ubah menjadi cerita yang natural.
+
+Mode cerita: ${mode}
+
+Jika terdapat unsur romantis, semua tokoh yang terlibat harus merupakan orang dewasa.
+`;
+
+  const messages = [
+    {
+      role: "system",
+      content: systemPrompt
+    },
+    {
+      role: "user",
+      content: `
+Judul:
+${judul || "Tanpa Judul"}
+
+Perintah penulis:
+${perintah}
+
+Tulislah cerita lengkap berdasarkan perintah tersebut.
+`
+    }
+  ];
+
+  const hasil = await callGroq(messages, 4500);
+
+  if (!hasil) {
+    throw new Error("AI tidak menghasilkan tulisan.");
+  }
+
+  return json({
+    success: true,
+    hasil_tulisan: hasil,
+    jumlah_kata: hitungKata(hasil),
+    model_ai: "openai/gpt-oss-120b"
+  });
+}
+
+async function buatNovel(body, user, token) {
   const data = {
-
-    user_id:
-      user.id,
-
-    judul:
-      body.judul ||
-      "Novel Baru",
-
-    genre:
-      body.genre ||
-      "Drama",
-
-    gaya:
-      body.gaya ||
-      "Natural",
-
-    nuansa:
-      body.nuansa ||
-      "Emosional",
-
-    mode:
-      body.mode ||
-      "Normal",
-
-    premis:
-      body.premis ||
-      "",
-
-    target_bab:
-      Number(
-        body.target_bab ||
-        100
-      ),
-
-    bab_selesai:
-      0,
-
-    status:
-      "aktif"
+    user_id: user.id,
+    judul: cleanText(body.judul, 300),
+    genre: cleanText(body.genre, 100),
+    gaya: cleanText(body.gaya, 200),
+    nuansa: cleanText(body.nuansa, 200),
+    mode: cleanText(body.mode || "Normal", 50),
+    premis: cleanText(body.premis, 5000),
+    target_bab: Number(body.target_bab || 100),
+    bab_selesai: 0,
+    status: "aktif"
   };
 
-  const response =
-    await supabaseFetch(
-      env,
-      token,
-      "novel",
-      {
-        method:
-          "POST",
+  const res = await supabaseUserFetch(
+    "novel",
+    token,
+    {
+      method: "POST",
+      headers: {
+        Prefer: "return=representation"
+      },
+      body: JSON.stringify(data)
+    }
+  );
 
-        headers: {
-          "Prefer":
-            "return=representation"
-        },
-
-        body:
-          JSON.stringify(data)
-      }
-    );
-
-  const raw =
-    await response.text();
-
-  if (!response.ok) {
-    throw new Error(
-      `Gagal membuat novel: ${raw}`
-    );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gagal membuat novel: ${err}`);
   }
 
-  let result = [];
+  const result = await res.json();
 
-  try {
-    result =
-      JSON.parse(raw);
-  } catch {}
-
-  return json(
-    {
-      success:
-        true,
-
-      novel:
-        Array.isArray(result)
-          ? result[0]
-          : result
-    },
-    200,
-    corsHeaders
-  );
+  return json({
+    success: true,
+    novel: result[0]
+  });
 }
 
+async function ambilNovel(novelId, user, token) {
+  const res = await supabaseUserFetch(
+    `novel?id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*`,
+    token
+  );
 
-/* =====================================================
-   TULIS BAB
-===================================================== */
+  if (!res.ok) {
+    throw new Error("Gagal mengambil data novel.");
+  }
 
-async function tulisBab(
-  body,
-  user,
-  token,
-  env,
-  corsHeaders
-) {
+  const rows = await res.json();
 
-  const novelId =
-    Number(
-      body.novel_id
-    );
+  if (!rows.length) {
+    throw new Error("Novel tidak ditemukan.");
+  }
+
+  return rows[0];
+}
+
+async function ambilKarakter(novelId, user, token) {
+  const res = await supabaseUserFetch(
+    `novel_karakter?novel_id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*&order=id.asc`,
+    token
+  );
+
+  if (!res.ok) return [];
+
+  return await res.json();
+}
+
+async function ambilMemory(novelId, user, token) {
+  const res = await supabaseUserFetch(
+    `novel_memory?novel_id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*&order=penting.desc,updated_at.desc&limit=15`,
+    token
+  );
+
+  if (!res.ok) return [];
+
+  return await res.json();
+}
+
+async function ambilBabTerakhir(novelId, user, token) {
+  const res = await supabaseUserFetch(
+    `novel_bab?novel_id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=nomor_bab,judul_bab,isi_bab,ringkasan&order=nomor_bab.desc&limit=1`,
+    token
+  );
+
+  if (!res.ok) return [];
+
+  return await res.json();
+}
+
+function formatKarakter(karakter) {
+  if (!karakter.length) return "Belum ada data karakter.";
+
+  return karakter
+    .slice(0, 15)
+    .map(k => {
+      return `
+Nama: ${k.nama}
+Umur: ${k.umur || "-"}
+Peran: ${k.peran || "-"}
+Sifat: ${k.sifat || "-"}
+Latar belakang: ${k.latar_belakang || "-"}
+Hubungan: ${k.hubungan || "-"}
+Tujuan: ${k.tujuan || "-"}
+Rahasia: ${k.rahasia || "-"}
+`;
+    })
+    .join("\n");
+}
+
+function formatMemory(memory) {
+  if (!memory.length) return "Belum ada memory khusus.";
+
+  return memory
+    .slice(0, 10)
+    .map(m => {
+      return `
+${m.tipe || "Memory"}:
+${cleanText(m.judul, 200)}
+
+${cleanText(m.isi, 800)}
+`;
+    })
+    .join("\n");
+}
+
+async function tulisBab(body, user, token) {
+  const novelId = body.novel_id;
 
   if (!novelId) {
-
-    return json(
-      {
-        success: false,
-        error:
-          "ID novel tidak ditemukan."
-      },
-      400,
-      corsHeaders
-    );
+    throw new Error("ID novel tidak ditemukan.");
   }
 
+  const novel = await ambilNovel(novelId, user, token);
+  const karakter = await ambilKarakter(novelId, user, token);
+  const memory = await ambilMemory(novelId, user, token);
+  const babTerakhir = await ambilBabTerakhir(novelId, user, token);
 
-  /* ===================================================
-     NOVEL
-  =================================================== */
+  const nomorBab = Number(novel.bab_selesai || 0) + 1;
 
-  const novelResponse =
-    await supabaseFetch(
-      env,
-      token,
-      `novel?id=eq.${novelId}&user_id=eq.${user.id}&select=*`,
-      {
-        method:
-          "GET"
-      }
-    );
+  let konteksBabSebelumnya = "";
 
-  const novelRaw =
-    await novelResponse.text();
+  if (babTerakhir.length) {
+    const bab = babTerakhir[0];
 
-  if (!novelResponse.ok) {
+    // Hanya ambil bagian akhir bab sebelumnya.
+    // Ini sangat menghemat token.
+    const isi = String(bab.isi_bab || "");
 
-    throw new Error(
-      `Gagal membaca novel: ${novelRaw}`
-    );
-  }
-
-  const novels =
-    JSON.parse(
-      novelRaw
-    );
-
-  if (
-    !Array.isArray(novels) ||
-    novels.length === 0
-  ) {
-
-    return json(
-      {
-        success: false,
-        error:
-          "Novel tidak ditemukan."
-      },
-      404,
-      corsHeaders
-    );
-  }
-
-  const novel =
-    novels[0];
-
-
-  /* ===================================================
-     KARAKTER
-  =================================================== */
-
-  const characterResponse =
-    await supabaseFetch(
-      env,
-      token,
-      `novel_karakter?novel_id=eq.${novelId}&user_id=eq.${user.id}&select=*&order=created_at.asc`,
-      {
-        method:
-          "GET"
-      }
-    );
-
-  let characters = [];
-
-  if (characterResponse.ok) {
-
-    characters =
-      await characterResponse.json();
-  }
-
-
-  /* ===================================================
-     MEMORY
-  =================================================== */
-
-  const memoryResponse =
-    await supabaseFetch(
-      env,
-      token,
-      `novel_memory?novel_id=eq.${novelId}&user_id=eq.${user.id}&select=*&order=created_at.desc&limit=20`,
-      {
-        method:
-          "GET"
-      }
-    );
-
-  let memories = [];
-
-  if (memoryResponse.ok) {
-
-    memories =
-      await memoryResponse.json();
-  }
-
-
-  /* ===================================================
-     BAB TERAKHIR
-  =================================================== */
-
-  const chapterResponse =
-    await supabaseFetch(
-      env,
-      token,
-      `novel_bab?novel_id=eq.${novelId}&user_id=eq.${user.id}&select=id,nomor_bab,judul_bab,ringkasan,isi_bab&order=nomor_bab.desc&limit=3`,
-      {
-        method:
-          "GET"
-      }
-    );
-
-  let chapters = [];
-
-  if (chapterResponse.ok) {
-
-    chapters =
-      await chapterResponse.json();
-  }
-
-
-  const nomorBab =
-    Number(
-      novel.bab_selesai || 0
-    ) + 1;
-
-
-  /* ===================================================
-     KARAKTER TEXT
-  =================================================== */
-
-  let characterText =
-    "Belum ada karakter.";
-
-  if (characters.length) {
-
-    characterText =
-      characters.map(c => {
-
-        return `
-Nama: ${c.nama}
-Umur: ${c.umur || "-"}
-Jenis kelamin: ${c.jenis_kelamin || "-"}
-Peran: ${c.peran || "-"}
-Sifat: ${c.sifat || "-"}
-Latar belakang: ${c.latar_belakang || "-"}
-Hubungan: ${c.hubungan || "-"}
-Tujuan: ${c.tujuan || "-"}
-Rahasia: ${c.rahasia || "-"}
-Catatan: ${c.catatan || "-"}
-`;
-
-      }).join("\n");
-  }
-
-
-  /* ===================================================
-     MEMORY TEXT
-  =================================================== */
-
-  let memoryText =
-    "Belum ada memory cerita.";
-
-  if (memories.length) {
-
-    memoryText =
-      memories.map(m => {
-
-        return `
-Tipe: ${m.tipe || "-"}
-Judul: ${m.judul || "-"}
-Isi: ${m.isi || "-"}
-Bab terkait: ${m.bab_terkait || "-"}
-Penting: ${m.penting ? "Ya" : "Tidak"}
-`;
-
-      }).join("\n");
-  }
-
-
-  /* ===================================================
-     BAB SEBELUMNYA
-  =================================================== */
-
-  let previousText =
-    "Belum ada bab sebelumnya.";
-
-  if (chapters.length) {
-
-    const ordered =
-      [...chapters].reverse();
-
-    previousText =
-      ordered.map(c => {
-
-        return `
-BAB ${c.nomor_bab}
-
-Judul:
-${c.judul_bab || ""}
-
-Ringkasan:
-${c.ringkasan || ""}
-
-Isi:
-${c.isi_bab || ""}
-`;
-
-      }).join("\n\n");
-  }
-
-
-  /* ===================================================
-     MODE DEWASA
-  =================================================== */
-
-  let adultInstruction = "";
-
-  if (
-    String(novel.mode)
-      .toLowerCase()
-      .includes("dewasa")
-  ) {
-
-    adultInstruction = `
-Novel menggunakan mode Dewasa 18+.
-
-Pastikan seluruh tokoh yang terlibat
-dalam hubungan romantis adalah orang dewasa.
-
-Tema romantis dan hubungan dewasa
-boleh menjadi bagian cerita,
-tetapi jangan menulis adegan seksual
-secara eksplisit atau pornografis.
+    konteksBabSebelumnya = `
+BAB SEBELUMNYA: ${bab.nomor_bab}
+${cleanText(isi.slice(-6500), 6500)}
 `;
   }
-
-
-  /* ===================================================
-     SYSTEM PROMPT
-  =================================================== */
 
   const systemPrompt = `
-Kamu adalah PENA AI,
-penulis novel profesional
-berbahasa Indonesia.
+Kamu adalah penulis novel profesional Indonesia.
 
-Kamu sedang menulis satu bab
-dari sebuah novel yang berkelanjutan.
+Tugasmu adalah melanjutkan novel secara langsung.
 
-HASIL HARUS LANGSUNG BERUPA PROSA NOVEL.
+HASIL HARUS BERUPA PROSA NOVEL.
 
-Target:
-sekitar 2.000–2.300 kata.
+Jangan membuat:
+- Markdown
+- bullet
+- numbering
+- outline
+- laporan
+- penjelasan
+- komentar sebagai AI
+- rangkuman sebelum cerita
 
-PENTING:
+Jangan menulis:
+"Berikut adalah bab..."
+"Pada bab ini..."
+"Bab selanjutnya..."
 
-Jangan membuat outline.
+Langsung mulai dengan cerita.
 
-Jangan membuat daftar.
+Gunakan narasi, dialog, tindakan, suasana, pikiran, emosi, konflik, dan perkembangan kejadian.
 
-Jangan menggunakan bullet.
+Jaga kesinambungan dengan cerita sebelumnya.
 
-Jangan menggunakan Markdown.
+Jangan mengulang seluruh kejadian dari bab sebelumnya.
 
-Jangan membuat tabel.
+Bab harus memiliki perkembangan cerita yang nyata.
 
-Jangan membuat laporan.
+Akhiri bab dengan hook yang membuat pembaca ingin melanjutkan.
 
-Jangan memberikan penjelasan.
-
-Jangan menulis "Berikut babnya".
-
-Jangan menulis "Bab ${nomorBab}"
-sebagai heading.
-
-Jangan membuat ringkasan
-sebagai pengganti cerita.
-
-Tulis langsung adegan.
-
-Gunakan paragraf yang natural.
-
-Gunakan dialog yang hidup.
-
-Gunakan tindakan tokoh.
-
-Gunakan ekspresi,
-pikiran,
-emosi,
-suasana,
-konflik,
-dan konsekuensi.
-
-Jangan mempercepat semua kejadian
-hanya agar cerita cepat selesai.
-
-Kembangkan adegan secara bertahap.
-
-Setiap kejadian harus memiliki
-sebab dan akibat.
-
-Jaga konsistensi karakter.
-
-Jaga konsistensi hubungan.
-
-Jaga konsistensi tempat,
-waktu,
-dan fakta cerita.
-
-Jangan mengulang isi bab sebelumnya
-secara panjang.
-
-Bab baru harus terasa sebagai
-kelanjutan langsung dari cerita.
-
-Jangan menyelesaikan semua konflik utama
-dalam satu bab.
-
-Buat perkembangan yang membuka
-kemungkinan bab berikutnya.
-
-Akhiri dengan situasi,
-keputusan,
-informasi,
-konflik,
-atau kejadian
-yang membuat pembaca ingin
-membaca bab selanjutnya.
-
-${adultInstruction}
-`;
-
-
-  /* ===================================================
-     USER PROMPT
-  =================================================== */
-
-  const userPrompt = `
-NOVEL
-
-Judul:
-${novel.judul}
-
-Genre:
-${novel.genre || "Drama"}
-
-Gaya:
-${novel.gaya || "Natural"}
-
-Nuansa:
-${novel.nuansa || "Emosional"}
+Target panjang sekitar 1.800-2.200 kata.
 
 Mode:
 ${novel.mode || "Normal"}
 
-Premis:
-${novel.premis || ""}
+Genre:
+${novel.genre || "-"}
 
-Bab yang akan ditulis:
-${nomorBab}
+Gaya:
+${novel.gaya || "-"}
 
+Nuansa:
+${novel.nuansa || "-"}
 
-KARAKTER
-
-${characterText}
-
-
-MEMORY CERITA
-
-${memoryText}
-
-
-BAB-BAB TERAKHIR
-
-${previousText}
-
-
-TUGAS
-
-Tulislah Bab ${nomorBab}.
-
-Target panjang sekitar
-2.000–2.300 kata.
-
-Mulai langsung dari adegan.
-
-Jangan membuat heading.
-
-Jangan membuat bullet.
-
-Jangan membuat ringkasan.
-
-Jangan menjelaskan proses penulisan.
-
-Jangan mengakhiri cerita terlalu cepat.
-
-Tulis seperti halaman novel
-yang langsung siap dibaca.
+Jika ada unsur romantis, semua tokoh yang terlibat harus orang dewasa.
 `;
 
+  const userPrompt = `
+JUDUL NOVEL:
+${novel.judul}
 
-  /* ===================================================
-     SATU PANGGILAN GROQ
-  =================================================== */
+PREMIS:
+${cleanText(novel.premis, 3000)}
 
-  let chapterText =
-    await callGroq(
-      env,
-      [
-        {
-          role:
-            "system",
+KARAKTER:
+${formatKarakter(karakter)}
 
-          content:
-            systemPrompt
-        },
+MEMORY CERITA:
+${formatMemory(memory)}
 
-        {
-          role:
-            "user",
+${konteksBabSebelumnya}
 
-          content:
-            userPrompt
-        }
-      ],
-      6500
-    );
+Sekarang tulis BAB ${nomorBab}.
 
+Jangan memberikan judul bab terpisah.
+Langsung tulis isi novel.
 
-  chapterText =
-    bersihkanProsa(
-      chapterText
-    );
+Panjang sekitar 1.800-2.200 kata.
+`;
 
+  const hasil = await callGroq(
+    [
+      {
+        role: "system",
+        content: systemPrompt
+      },
+      {
+        role: "user",
+        content: userPrompt
+      }
+    ],
+    4500
+  );
 
-  const jumlahKata =
-    hitungKata(
-      chapterText
-    );
+  if (!hasil) {
+    throw new Error("AI tidak menghasilkan bab.");
+  }
 
+  const jumlahKata = hitungKata(hasil);
 
-  /* ===================================================
-     JUDUL BAB TANPA PANGGILAN AI
-  =================================================== */
+  const judulBab = `Bab ${nomorBab}`;
 
-  const judulBab =
-    `Bab ${nomorBab}`;
-
-
-  /* ===================================================
-     SIMPAN BAB
-  =================================================== */
-
-  const chapterData = {
-
-    novel_id:
-      novelId,
-
-    user_id:
-      user.id,
-
-    nomor_bab:
-      nomorBab,
-
-    judul_bab:
-      judulBab,
-
-    isi_bab:
-      chapterText,
-
-    ringkasan:
-      "",
-
-    jumlah_karakter:
-      chapterText.length,
-
-    status:
-      "selesai"
+  const babData = {
+    novel_id: novelId,
+    user_id: user.id,
+    nomor_bab: nomorBab,
+    judul_bab: judulBab,
+    isi_bab: hasil,
+    ringkasan: cleanText(hasil.slice(0, 700), 700),
+    jumlah_karakter: hasil.length,
+    status: "selesai"
   };
 
-
-  const insertResponse =
-    await supabaseFetch(
-      env,
-      token,
-      "novel_bab",
-      {
-        method:
-          "POST",
-
-        headers: {
-          "Prefer":
-            "return=representation"
-        },
-
-        body:
-          JSON.stringify(
-            chapterData
-          )
-      }
-    );
-
-  const insertRaw =
-    await insertResponse.text();
-
-  if (!insertResponse.ok) {
-
-    throw new Error(
-      `Gagal menyimpan bab: ${insertRaw}`
-    );
-  }
-
-
-  /* ===================================================
-     UPDATE NOVEL
-  =================================================== */
-
-  const updateResponse =
-    await supabaseFetch(
-      env,
-      token,
-      `novel?id=eq.${novelId}&user_id=eq.${user.id}`,
-      {
-        method:
-          "PATCH",
-
-        headers: {
-          "Prefer":
-            "return=minimal"
-        },
-
-        body:
-          JSON.stringify({
-
-            bab_selesai:
-              nomorBab,
-
-            updated_at:
-              new Date().toISOString()
-
-          })
-      }
-    );
-
-  if (!updateResponse.ok) {
-
-    console.error(
-      "Gagal update novel:",
-      await updateResponse.text()
-    );
-  }
-
-
-  /* ===================================================
-     CATAT PENGGUNAAN AI
-  =================================================== */
-
-  try {
-
-    await supabaseFetch(
-      env,
-      token,
-      "penggunaan_ai",
-      {
-        method:
-          "POST",
-
-        headers: {
-          "Prefer":
-            "return=minimal"
-        },
-
-        body:
-          JSON.stringify({
-
-            user_id:
-              user.id,
-
-            jenis_tulisan:
-              "Novel Bab",
-
-            jumlah_karakter:
-              chapterText.length,
-
-            model_ai:
-              "openai/gpt-oss-120b",
-
-            status:
-              "berhasil"
-
-          })
-      }
-    );
-
-  } catch (e) {
-
-    console.error(
-      "Gagal mencatat penggunaan AI:",
-      e
-    );
-  }
-
-
-  /* ===================================================
-     HASIL
-  =================================================== */
-
-  return json(
+  const insertBab = await supabaseUserFetch(
+    "novel_bab",
+    token,
     {
-      success:
-        true,
-
-      novel_id:
-        novelId,
-
-      nomor_bab:
-        nomorBab,
-
-      judul_bab:
-        judulBab,
-
-      text:
-        chapterText,
-
-      jumlah_kata:
-        jumlahKata,
-
-      jumlah_karakter:
-        chapterText.length
-    },
-    200,
-    corsHeaders
+      method: "POST",
+      headers: {
+        Prefer: "return=representation"
+      },
+      body: JSON.stringify(babData)
+    }
   );
+
+  if (!insertBab.ok) {
+    const err = await insertBab.text();
+    throw new Error(`Gagal menyimpan bab: ${err}`);
+  }
+
+  const updateNovel = await supabaseUserFetch(
+    `novel?id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}`,
+    token,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        bab_selesai: nomorBab,
+        updated_at: new Date().toISOString()
+      })
+    }
+  );
+
+  if (!updateNovel.ok) {
+    console.log("Peringatan: nomor bab novel gagal diperbarui.");
+  }
+
+  // Simpan penggunaan AI.
+  await supabaseUserFetch(
+    "penggunaan_ai",
+    token,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: user.id,
+        jenis_tulisan: "novel_bab",
+        jumlah_karakter: hasil.length,
+        model_ai: "openai/gpt-oss-120b",
+        status: "berhasil"
+      })
+    }
+  );
+
+  return json({
+    success: true,
+    nomor_bab: nomorBab,
+    judul_bab: judulBab,
+    isi_bab: hasil,
+    jumlah_kata: jumlahKata,
+    jumlah_karakter: hasil.length
+  });
 }
 
-
-/* =====================================================
-   UPDATE MEMORY
-===================================================== */
-
-async function updateMemory(
-  body,
-  user,
-  token,
-  env,
-  corsHeaders
-) {
-
-  const novelId =
-    Number(
-      body.novel_id
-    );
-
-  if (!novelId) {
-
-    return json(
-      {
-        success: false,
-        error:
-          "ID novel tidak ditemukan."
-      },
-      400,
-      corsHeaders
-    );
+async function updateMemory(body, user, token) {
+  if (!body.novel_id) {
+    throw new Error("ID novel tidak ditemukan.");
   }
 
   const data = {
-
-    novel_id:
-      novelId,
-
-    user_id:
-      user.id,
-
-    tipe:
-      body.tipe ||
-      "kejadian",
-
-    judul:
-      body.judul ||
-      "Memory Cerita",
-
-    isi:
-      body.isi ||
-      "",
-
-    penting:
-      body.penting ??
-      true,
-
-    bab_terkait:
-      body.bab_terkait
-        ? Number(
-            body.bab_terkait
-          )
-        : null
+    novel_id: body.novel_id,
+    user_id: user.id,
+    tipe: cleanText(body.tipe || "alur", 50),
+    judul: cleanText(body.judul, 200),
+    isi: cleanText(body.isi, 3000),
+    penting: body.penting !== false,
+    bab_terkait: body.bab_terkait || null,
+    updated_at: new Date().toISOString()
   };
 
-  const response =
-    await supabaseFetch(
-      env,
-      token,
-      "novel_memory",
-      {
-        method:
-          "POST",
+  const res = await supabaseUserFetch(
+    "novel_memory",
+    token,
+    {
+      method: "POST",
+      headers: {
+        Prefer: "return=representation"
+      },
+      body: JSON.stringify(data)
+    }
+  );
 
-        headers: {
-          "Prefer":
-            "return=representation"
-        },
-
-        body:
-          JSON.stringify(
-            data
-          )
-      }
-    );
-
-  const raw =
-    await response.text();
-
-  if (!response.ok) {
-
-    throw new Error(
-      `Gagal menyimpan memory: ${raw}`
-    );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gagal menyimpan memory: ${err}`);
   }
 
-  let result = [];
+  return json({
+    success: true
+  });
+}
+
+async function handle(request) {
+  if (request.method === "OPTIONS") {
+    return new Response("", {
+      status: 204,
+      headers: corsHeaders
+    });
+  }
+
+  if (request.method === "GET") {
+    return json({
+      success: true,
+      app: "PENA AI",
+      status: "Backend aktif"
+    });
+  }
+
+  if (request.method !== "POST") {
+    return json({
+      success: false,
+      error: "Method tidak didukung."
+    }, 405);
+  }
+
+  const auth = request.headers.get("Authorization");
+
+  if (!auth || !auth.startsWith("Bearer ")) {
+    return json({
+      success: false,
+      error: "Token login tidak ditemukan."
+    }, 401);
+  }
+
+  const token = auth.replace("Bearer ", "").trim();
+
+  const user = await getUser(token);
+
+  if (!user) {
+    return json({
+      success: false,
+      error: "Sesi login tidak valid."
+    }, 401);
+  }
+
+  let body;
 
   try {
-    result =
-      JSON.parse(raw);
-  } catch {}
+    body = await request.json();
+  } catch {
+    return json({
+      success: false,
+      error: "JSON request tidak valid."
+    }, 400);
+  }
 
-  return json(
-    {
-      success:
-        true,
+  try {
+    switch (body.action) {
+      case "write":
+        return await tulisCepat(body, user, token);
 
-      memory:
-        Array.isArray(result)
-          ? result[0]
-          : result
-    },
-    200,
-    corsHeaders
-  );
+      case "create_novel":
+      case "buat_novel":
+        return await buatNovel(body, user, token);
+
+      case "write_chapter":
+      case "tulis_bab":
+        return await tulisBab(body, user, token);
+
+      case "update_memory":
+        return await updateMemory(body, user, token);
+
+      default:
+        return json({
+          success: false,
+          error: `Action tidak dikenal: ${body.action}`
+        }, 400);
+    }
+  } catch (error) {
+    console.error(error);
+
+    return json({
+      success: false,
+      error: error.message || "Terjadi kesalahan pada server."
+    }, 500);
+  }
 }
+
+export default {
+  async fetch(request, env) {
+    globalThis.SUPABASE_URL = env.SUPABASE_URL;
+    globalThis.SUPABASE_ANON_KEY = env.SUPABASE_ANON_KEY;
+    globalThis.GROQ_API_KEY = env.GROQ_API_KEY;
+
+    return handle(request);
+  }
+};
