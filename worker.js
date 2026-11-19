@@ -147,8 +147,9 @@ if (missing.length) {
       );
 
       if (!saveHistory.ok) {
-        throw new Error("Gagal menyimpan riwayat tulisan.");
-      }
+  const errorDetail = await saveHistory.text();
+  throw new Error("Gagal menyimpan riwayat: " + errorDetail);
+}
 
       // Catat penggunaan AI
       const saveUsage = await fetch(
