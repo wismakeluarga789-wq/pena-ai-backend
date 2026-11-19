@@ -1,151 +1,542 @@
-const cors = {
-  "Access-Control-Allow-Origin": "https://pena-ai-engine.pages.dev",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization"
-};
-
 export default {
   async fetch(request, env) {
-    const headers = {
-      ...cors,
-      "Content-Type": "application/json"
+    const allowedOrigin = "https://pena-ai-engine.pages.dev";
+
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": allowedOrigin,
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Max-Age": "86400"
     };
 
+    // ==============================
+    // CORS
+    // ==============================
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers });
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders
+      });
     }
 
+    // ==============================
+    // GET - CEK BACKEND
+    // ==============================
     if (request.method === "GET") {
-      return Response.json({
-        success: true,
-        app: "PENA AI",
-        status: "Backend aktif"
-      }, { headers });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          app: "PENA AI",
+          status: "Backend aktif"
+        }),
+        {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        }
+      );
     }
 
+    // ==============================
+    // HANYA POST
+    // ==============================
     if (request.method !== "POST") {
-      return Response.json(
-        { error: "Gunakan metode POST." },
-        { status: 405, headers }
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Method tidak diizinkan."
+        }),
+        {
+          status: 405,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        }
       );
     }
 
     try {
-      const url = env.SUPABASE_URL;
-      const anonKey = env.SUPABASE_ANON_KEY;
-      const apiKey = env.GROQ_API_KEY;
-      const model = "openai/gpt-oss-120b";
+      // ==============================
+      // CEK ENVIRONMENT
+      // ==============================
+      const SUPABASE_URL = env.SUPABASE_URL;
+      const SUPABASE_ANON_KEY = env.SUPABASE_ANON_KEY;
+      const GROQ_API_KEY = env.GROQ_API_KEY;
 
-      const missing = [];
-
-      if (!url) missing.push("SUPABASE_URL");
-      if (!anonKey) missing.push("SUPABASE_ANON_KEY");
-      if (!apiKey) missing.push("GROQ_API_KEY");
-
-      if (missing.length) {
-        return Response.json({
-          success: false,
-          error: "Konfigurasi belum terbaca: " + missing.join(", ")
-        }, { status: 500, headers });
-      }
-
-      const authHeader = request.headers.get("Authorization");
-
-      if (!authHeader?.startsWith("Bearer ")) {
-        return Response.json(
-          { error: "Silakan login terlebih dahulu." },
-          { status: 401, headers }
+      if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !GROQ_API_KEY) {
+        throw new Error(
+          "Konfigurasi backend belum lengkap."
         );
       }
 
-      const token = authHeader.slice(7);
+      // ==============================
+      // CEK TOKEN LOGIN
+      // ==============================
+      const authHeader = request.headers.get("Authorization");
 
-      // Verifikasi akun Supabase
-      const authResponse = await fetch(
-        `${url}/auth/v1/user`,
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        throw new Error("Token login tidak ditemukan.");
+      }
+
+      const token = authHeader.replace("Bearer ", "").trim();
+
+      if (!token) {
+        throw new Error("Token login kosong.");
+      }
+
+      // ==============================
+      // VERIFIKASI USER SUPABASE
+      // ==============================
+      const userResponse = await fetch(
+        `${SUPABASE_URL}/auth/v1/user`,
         {
+          method: "GET",
           headers: {
-            "apikey": anonKey,
-            "Authorization": `Bearer ${token}`
+            "Authorization": `Bearer ${token}`,
+            "apikey": SUPABASE_ANON_KEY
           }
         }
       );
 
-      if (!authResponse.ok) {
-        return Response.json(
-          { error: "Sesi login tidak valid." },
-          { status: 401, headers }
+      if (!userResponse.ok) {
+        const userError = await userResponse.text();
+
+        throw new Error(
+          "Sesi login tidak valid: " + userError
         );
       }
 
-      const user = await authResponse.json();
+      const user = await userResponse.json();
+
+      if (!user || !user.id) {
+        throw new Error("Data pengguna tidak ditemukan.");
+      }
+
+      // ==============================
+      // BACA DATA DARI FRONTEND
+      // ==============================
       const body = await request.json();
 
-      const prompt = body.prompt || body.text;
+      const prompt = String(
+        body.prompt ||
+        body.text ||
+        ""
+      ).trim();
 
-      if (!prompt || !String(prompt).trim()) {
-        return Response.json(
-          { error: "Perintah penulisan masih kosong." },
-          { status: 400, headers }
+      const judul = String(
+        body.judul ||
+        "Tulisan Baru"
+      ).trim();
+
+      const jenis = String(
+        body.jenis ||
+        "Novel"
+      ).trim();
+
+      if (!prompt) {
+        throw new Error(
+          "Ide tulisan belum diisi."
         );
       }
 
-      /*
-       * PENA AI - INSTRUKSI PENULISAN NOVEL
-       *
-       * AI harus bertindak sebagai novelis, bukan pembuat makalah,
-       * laporan, artikel, rangkuman, atau outline.
-       */
+      // ==================================================
+      // MODEL GROQ
+      // ==================================================
+      const model = "openai/gpt-oss-120b";
+
+      // ==================================================
+      // INSTRUKSI NOVEL
+      // ==================================================
       const novelPrompt = `
-Kamu adalah penulis novel profesional.
+Kamu adalah NOVELIS profesional.
 
-Tugasmu adalah mengembangkan ide pengguna menjadi tulisan fiksi bergaya NOVEL yang hidup, mengalir, emosional, dan enak dibaca.
+Tugasmu bukan membuat laporan, makalah, artikel, rangkuman,
+outline, sinopsis, daftar ide, atau dokumen perencanaan.
 
-IDE / PERINTAH PENGGUNA:
-${String(prompt)}
+Tugasmu adalah MENULIS SEBUAH CERITA NOVEL.
 
-ATURAN WAJIB PENULISAN:
+IDE DARI PENGGUNA:
 
-1. Tulis seperti novel sungguhan, bukan makalah, artikel, laporan, rangkuman, atau outline.
-2. Gunakan prosa naratif yang mengalir dari awal sampai akhir.
-3. Bangun adegan melalui tindakan, dialog, suasana, pikiran, perasaan, ekspresi, dan interaksi antarkarakter.
-4. Gunakan paragraf naratif yang natural dengan panjang yang bervariasi.
-5. Jangan membuat daftar poin.
-6. Jangan menggunakan bullet.
-7. Jangan menggunakan nomor 1., 2., 3., dan seterusnya sebagai struktur tulisan.
-8. Jangan menggunakan tabel.
-9. Jangan menggunakan format Markdown.
-10. Jangan menggunakan tanda ** atau ## atau ###.
-11. Jangan membuat bagian seperti "Pendahuluan", "Babak Pertama", "Babak Kedua", "Refleksi", "Kesimpulan", "Strategi", atau "Momen Penting", kecuali pengguna memang secara khusus memintanya.
-12. Jangan menuliskan penjelasan tentang teknik menulis atau proses pembuatan cerita.
-13. Jangan mengubah cerita menjadi rangkuman.
-14. Jangan membuat daftar karakter.
-15. Jangan menggunakan simbol bullet seperti -, *, atau • untuk menyusun isi cerita.
-16. Jika ada beberapa kejadian, rangkai semuanya menjadi satu alur cerita yang alami.
-17. Gunakan dialog secara wajar ketika sesuai dengan adegan.
-18. Tunjukkan emosi melalui tindakan dan situasi, bukan hanya dengan mengatakan bahwa tokoh merasa sedih, senang, marah, atau takut.
-19. Buat suasana tempat terasa nyata dengan detail yang relevan.
-20. Hindari bahasa yang terlalu kaku atau seperti buku pelajaran.
-21. Jangan mengawali tulisan dengan kalimat seperti "Berikut adalah cerita..." atau "Kisah ini menceritakan...".
-22. Langsung masuk ke dalam cerita.
-23. Jangan memberikan kesimpulan atau pesan moral di akhir kecuali memang menjadi bagian alami dari cerita.
-24. Pertahankan nama, kejadian, dan informasi penting yang diberikan pengguna.
-25. Jika informasi pengguna masih sederhana, kembangkan menjadi adegan dan narasi yang lebih kaya tanpa keluar dari konteks.
-26. Gunakan bahasa Indonesia yang natural, indah, dan mudah dibaca.
-27. Prioritaskan pengalaman pembaca seolah-olah sedang membaca novel sungguhan.
+${prompt}
 
-HASIL AKHIR HARUS BERUPA NARASI NOVEL SAJA.
-Jangan tambahkan komentar, penjelasan, daftar, tabel, atau format lain di luar cerita.
+==================================================
+ATURAN UTAMA
+==================================================
+
+Tulislah cerita sebagai prosa naratif yang mengalir.
+
+Pembaca harus merasa sedang membaca novel sungguhan,
+bukan membaca dokumen informasi.
+
+Jangan menjelaskan struktur cerita kepada pembaca.
+
+Jangan membuat kerangka cerita.
+
+Jangan merangkum kejadian.
+
+Jangan mengubah ide pengguna menjadi daftar.
+
+Kembangkan cerita langsung menjadi adegan.
+
+==================================================
+BENTUK TULISAN
+==================================================
+
+Gunakan paragraf-paragraf naratif yang alami.
+
+Gunakan adegan secara langsung.
+
+Kembangkan kejadian melalui tindakan tokoh,
+percakapan, ekspresi, suasana tempat, pikiran,
+perasaan, konflik, ketegangan, dan reaksi tokoh.
+
+Biarkan satu adegan mengalir secara alami
+ke adegan berikutnya.
+
+Jika tokoh sedang berada di rumah,
+ceritakan apa yang benar-benar terjadi di rumah.
+
+Jika tokoh pergi ke suatu tempat,
+ceritakan perjalanan dan kedatangannya.
+
+Jika tokoh bertemu seseorang,
+tampilkan interaksi mereka.
+
+Jika terjadi konflik,
+bangun ketegangan sebelum konflik terjadi.
+
+Jika terjadi pertandingan,
+gambarkan pertandingan sebagai adegan
+yang dialami tokoh.
+
+Jangan menulis pertandingan seperti statistik.
+
+Jika terjadi percakapan,
+gunakan dialog yang terasa seperti percakapan manusia.
+
+==================================================
+JANGAN MENGGUNAKAN FORMAT DOKUMEN
+==================================================
+
+Jangan menggunakan Markdown.
+
+Jangan menggunakan tanda **.
+
+Jangan menggunakan tanda ###.
+
+Jangan menggunakan tanda # sebagai judul.
+
+Jangan menggunakan bullet.
+
+Jangan menggunakan simbol •.
+
+Jangan menggunakan daftar bernomor.
+
+Jangan menggunakan tabel.
+
+Jangan menggunakan garis pemisah seperti ---
+
+Jangan menggunakan format:
+
+"Bab 1:"
+
+"Bab 2:"
+
+"Bab 3:"
+
+"Pendahuluan"
+
+"Persiapan"
+
+"Babak Pertama"
+
+"Babak Kedua"
+
+"Babak Ketiga"
+
+"Refleksi"
+
+"Kesimpulan"
+
+"Penutup"
+
+"Daftar Karakter"
+
+"Daftar Perlengkapan"
+
+"Daftar Strategi"
+
+"Daftar Kejadian"
+
+"Pesan Moral"
+
+"Semoga cerita ini menginspirasi"
+
+Jangan membuat judul bagian
+di tengah cerita.
+
+Jika terjadi pergantian waktu atau tempat,
+lakukan secara alami melalui narasi.
+
+==================================================
+CONTOH GAYA YANG BENAR
+==================================================
+
+JANGAN MENULIS:
+
+"Bab 1: Persiapan"
+
+Jangan menulis:
+
+"Adit membawa sepatu futsal."
+
+"Adit membawa botol minum."
+
+Tulis seperti ini:
+
+Pagi itu Adit terbangun beberapa menit sebelum
+alarm berbunyi. Cahaya matahari menyelinap melalui
+celah tirai kamar. Ia masih sempat memejamkan mata
+ketika suara notifikasi dari ponselnya terdengar.
+
+Adit meraih ponsel itu tanpa benar-benar membuka
+matanya. Sebuah pesan dari Raka sudah masuk.
+
+"Kamu jadi datang?"
+
+Adit tersenyum kecil. Ia bangkit dari tempat tidur,
+kemudian mengambil tas yang sejak tadi malam sudah
+diletakkan di samping meja.
+
+Sepatu futsalnya dimasukkan ke dalam tas.
+Setelah itu ia meraih botol minum yang tergeletak
+di atas meja.
+
+==================================================
+CONTOH LAIN
+==================================================
+
+JANGAN MENULIS:
+
+"Menit ke-7: Adit mencetak gol."
+
+Tulis:
+
+Pada menit-menit awal pertandingan, Adit masih
+mencari celah di antara dua pemain lawan.
+
+Keringat mulai membasahi pelipisnya ketika sebuah
+umpan mendatar datang tepat ke arah kakinya.
+
+Ia tidak berpikir panjang.
+
+Adit menggiring bola melewati satu pemain,
+kemudian bergerak ke sisi kanan.
+
+"Dit!"
+
+Teriakan Raka terdengar dari belakang.
+
+Adit melihat gawang.
+
+Hanya ada sedikit ruang di antara kiper dan
+tiang sebelah kanan.
+
+Ia menendang.
+
+Bola meluncur rendah dan masuk ke sudut gawang.
+
+Sorak-sorai langsung pecah dari pinggir lapangan.
+
+==================================================
+GAYA BAHASA
+==================================================
+
+Gunakan bahasa Indonesia yang natural,
+hidup, dan mengalir.
+
+Gunakan variasi panjang kalimat dan paragraf.
+
+Jangan terlalu formal.
+
+Jangan terdengar seperti buku pelajaran.
+
+Jangan terdengar seperti laporan.
+
+Jangan terdengar seperti AI yang sedang menjelaskan sesuatu.
+
+Jangan memasukkan informasi yang tidak diperlukan
+hanya untuk membuat cerita terlihat panjang.
+
+Gunakan dialog jika memang sesuai dengan adegan.
+
+Dialog harus terasa seperti percakapan manusia.
+
+Jangan menggunakan dialog hanya untuk menjelaskan
+informasi secara berlebihan.
+
+Gunakan detail pancaindra secara alami,
+seperti suara, cahaya, udara, aroma,
+sentuhan, dan suasana.
+
+Tunjukkan emosi melalui tindakan dan reaksi tokoh.
+
+Jangan hanya mengatakan:
+
+"Dia merasa sedih."
+
+Lebih baik tunjukkan kesedihan melalui tindakan,
+ekspresi, pikiran, dan perilakunya.
+
+==================================================
+KARAKTER
+==================================================
+
+Pertahankan nama tokoh yang diberikan pengguna.
+
+Pertahankan sifat dan karakter yang diberikan pengguna.
+
+Jangan membuat daftar karakter.
+
+Perkenalkan karakter melalui tindakan,
+percakapan, dan interaksi di dalam cerita.
+
+Jika pengguna belum memberikan nama karakter,
+buat nama yang cocok dengan cerita.
+
+==================================================
+ALUR CERITA
+==================================================
+
+Cerita harus mempunyai pembukaan yang menarik.
+
+Kemudian cerita berkembang melalui kejadian,
+hubungan antartokoh, konflik, dan perubahan keadaan.
+
+Setiap kejadian harus mempunyai hubungan
+dengan kejadian berikutnya.
+
+Jangan melompat-lompat seperti laporan kronologis.
+
+Jangan menulis seperti:
+
+"Pagi hari terjadi ini."
+
+"Siang hari terjadi itu."
+
+"Sore hari terjadi ini."
+
+Buat perpindahan waktu terasa alami
+melalui pengalaman tokoh.
+
+Buat pembaca ingin terus membaca
+untuk mengetahui apa yang terjadi berikutnya.
+
+Akhiri cerita secara alami sesuai perkembangan cerita.
+
+Jangan menambahkan:
+
+"Refleksi"
+
+"Kesimpulan"
+
+"Pesan Moral"
+
+"Penutup"
+
+"Semoga cerita ini menginspirasi"
+
+==================================================
+JIKA IDE PENGGUNA SANGAT SINGKAT
+==================================================
+
+Jika pengguna hanya memberikan ide singkat,
+jangan mengubahnya menjadi outline.
+
+Jangan membuat daftar ide.
+
+Jangan menjelaskan rencana cerita.
+
+Kembangkan langsung menjadi cerita novel.
+
+Tambahkan detail yang diperlukan agar adegan terasa hidup,
+tetapi jangan mengubah inti ide pengguna.
+
+==================================================
+JIKA INFORMASI PENGGUNA BANYAK
+==================================================
+
+Jika pengguna memberikan banyak informasi,
+jangan mengubah informasi tersebut menjadi tabel.
+
+Jangan mengubah informasi tersebut menjadi daftar.
+
+Masukkan informasi tersebut ke dalam alur cerita
+secara alami.
+
+Informasi harus muncul melalui adegan,
+dialog, pikiran, tindakan, atau keadaan tokoh.
+
+==================================================
+ATURAN PALING PENTING
+==================================================
+
+Hasil akhir HARUS terasa seperti novel.
+
+Bukan makalah.
+
+Bukan laporan.
+
+Bukan artikel.
+
+Bukan outline.
+
+Bukan sinopsis.
+
+Bukan rangkuman.
+
+Bukan tabel.
+
+Bukan daftar.
+
+Bukan presentasi.
+
+Jangan menjelaskan bahwa kamu sedang menulis novel.
+
+Jangan memberikan komentar sebelum cerita.
+
+Jangan memberikan komentar setelah cerita.
+
+Jangan menawarkan bantuan lanjutan.
+
+Jangan menggunakan Markdown.
+
+Jangan menggunakan bullet.
+
+Jangan menggunakan daftar bernomor.
+
+Jangan menggunakan tabel.
+
+Jangan menggunakan judul bagian.
+
+Mulai langsung dengan cerita.
+
+Hanya hasilkan cerita novel.
 `;
 
-      // Proses penulisan AI
+      // ==================================================
+      // PANGGIL GROQ
+      // ==================================================
       const aiResponse = await fetch(
         "https://api.groq.com/openai/v1/responses",
         {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${GROQ_API_KEY}`
           },
           body: JSON.stringify({
             model,
@@ -154,39 +545,50 @@ Jangan tambahkan komentar, penjelasan, daftar, tabel, atau format lain di luar c
         }
       );
 
-      const aiResult = await aiResponse.json();
-
       if (!aiResponse.ok) {
+        const aiError = await aiResponse.text();
+
         throw new Error(
-          aiResult.error?.message || "Groq gagal memproses tulisan."
+          "Gagal menghubungi AI: " + aiError
         );
       }
 
-      const hasil = aiResult.output
-        ?.flatMap(item => item.content || [])
-        ?.filter(item => item.type === "output_text")
-        ?.map(item => item.text)
-        ?.join("\n") || "";
+      const aiResult = await aiResponse.json();
+
+      // ==================================================
+      // AMBIL HASIL TEKS
+      // ==================================================
+      const hasil =
+        aiResult.output
+          ?.flatMap(item => item.content || [])
+          ?.filter(item => item.type === "output_text")
+          ?.map(item => item.text)
+          ?.join("\n")
+          ?.trim() || "";
 
       if (!hasil) {
-        throw new Error("AI tidak menghasilkan tulisan.");
+        throw new Error(
+          "AI tidak menghasilkan tulisan."
+        );
       }
 
-      // Simpan riwayat tulisan
+      // ==================================================
+      // SIMPAN RIWAYAT PENULISAN
+      // ==================================================
       const saveHistory = await fetch(
-        `${url}/rest/v1/riwayat_penulisan`,
+        `${SUPABASE_URL}/rest/v1/riwayat_penulisan`,
         {
           method: "POST",
           headers: {
-            "apikey": anonKey,
-            "Authorization": `Bearer ${token}`,
             "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+            "apikey": SUPABASE_ANON_KEY,
             "Prefer": "return=minimal"
           },
           body: JSON.stringify({
             user_id: user.id,
-            judul: body.judul || "Tulisan Baru",
-            perintah: String(prompt),
+            judul: judul,
+            perintah: prompt,
             hasil_tulisan: hasil,
             model_ai: model
           })
@@ -195,25 +597,29 @@ Jangan tambahkan komentar, penjelasan, daftar, tabel, atau format lain di luar c
 
       if (!saveHistory.ok) {
         const errorDetail = await saveHistory.text();
+
         throw new Error(
-          "Gagal menyimpan riwayat: " + errorDetail
+          "Gagal menyimpan riwayat: " +
+          errorDetail
         );
       }
 
-      // Catat penggunaan AI
-      const saveUsage = await fetch(
-        `${url}/rest/v1/penggunaan_ai`,
+      // ==================================================
+      // SIMPAN PENGGUNAAN AI
+      // ==================================================
+      const usageResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/penggunaan_ai`,
         {
           method: "POST",
           headers: {
-            "apikey": anonKey,
-            "Authorization": `Bearer ${token}`,
             "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+            "apikey": SUPABASE_ANON_KEY,
             "Prefer": "return=minimal"
           },
           body: JSON.stringify({
             user_id: user.id,
-            jenis_tulisan: body.jenis || "Novel",
+            jenis_tulisan: jenis,
             jumlah_karakter: hasil.length,
             model_ai: model,
             status: "berhasil"
@@ -221,25 +627,56 @@ Jangan tambahkan komentar, penjelasan, daftar, tabel, atau format lain di luar c
         }
       );
 
-      if (!saveUsage.ok) {
-        const errorDetail = await saveUsage.text();
-        throw new Error(
-          "Gagal mencatat penggunaan AI: " + errorDetail
+      if (!usageResponse.ok) {
+        const usageError = await usageResponse.text();
+
+        // Riwayat sudah berhasil disimpan.
+        // Jadi jangan menggagalkan hasil tulisan hanya karena
+        // pencatatan penggunaan gagal.
+        console.error(
+          "Gagal mencatat penggunaan AI:",
+          usageError
         );
       }
 
-      return Response.json({
-        success: true,
-        text: hasil,
-        model: model,
-        message: "Novel berhasil dibuat dan disimpan."
-      }, { headers });
+      // ==================================================
+      // RESPONSE KE FRONTEND
+      // ==================================================
+      return new Response(
+        JSON.stringify({
+          success: true,
+          text: hasil,
+          model: model,
+          message: "Tulisan berhasil dibuat dan disimpan."
+        }),
+        {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        }
+      );
 
     } catch (error) {
-      return Response.json({
-        success: false,
-        error: error.message
-      }, { status: 500, headers });
+
+      // ==================================================
+      // ERROR RESPONSE
+      // ==================================================
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: error?.message ||
+            "Terjadi kesalahan pada backend."
+        }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        }
+      );
     }
   }
 };
