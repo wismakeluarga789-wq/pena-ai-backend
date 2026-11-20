@@ -40,6 +40,17 @@ function hitungKata(text) {
 
 
 // =====================================================
+// HITUNG KARAKTER
+// =====================================================
+
+function hitungKarakter(text) {
+  if (!text) return 0;
+
+  return String(text).length;
+}
+
+
+// =====================================================
 // BERSIHKAN HASIL AI
 // =====================================================
 
@@ -133,8 +144,8 @@ function bersihkanHasilAI(text) {
   }
 
 
-  hasil = hasil
-    .replace(
+  hasil =
+    hasil.replace(
       /^.*?Let's write\.\s*/is,
       ""
     )
@@ -209,17 +220,202 @@ function bersihkanHasilAI(text) {
 
 
 // =====================================================
+// BERSIHKAN JUDUL BAB
+// =====================================================
+
+function bersihkanJudulBab(
+  text,
+  nomorBab
+) {
+
+  if (!text) {
+    return `Bab ${nomorBab}`;
+  }
+
+
+  let judul =
+    String(text)
+      .trim();
+
+
+  // Hilangkan label yang mungkin dibuat AI
+
+  judul =
+    judul
+      .replace(
+        /^judul\s*bab\s*[:\-]?\s*/i,
+        ""
+      )
+      .replace(
+        /^bab\s*\d+\s*[:\-–—]?\s*/i,
+        ""
+      )
+      .replace(
+        /^["'“”]+/,
+        ""
+      )
+      .replace(
+        /["'“”]+$/,
+        ""
+      )
+      .replace(
+        /^#+\s*/,
+        ""
+      )
+      .trim();
+
+
+  // Satu baris saja
+
+  judul =
+    judul
+      .split("\n")[0]
+      .trim();
+
+
+  // Jangan terlalu panjang
+
+  if (
+    judul.length > 100
+  ) {
+
+    judul =
+      judul.substring(
+        0,
+        100
+      ).trim();
+
+  }
+
+
+  if (!judul) {
+
+    return `Bab ${nomorBab}`;
+
+  }
+
+
+  return judul;
+}
+
+
+// =====================================================
+// EKSTRAK JUDUL + ISI BAB
+// =====================================================
+
+function ekstrakJudulDanIsi(
+  text,
+  nomorBab
+) {
+
+  let hasil =
+    String(text || "").trim();
+
+
+  let judul = "";
+
+
+  // ---------------------------------------------------
+  // FORMAT UTAMA
+  // <JUDUL_BAB>...</JUDUL_BAB>
+  // <ISI_BAB>...</ISI_BAB>
+  // ---------------------------------------------------
+
+  const titleMatch =
+    hasil.match(
+      /<JUDUL_BAB>\s*([\s\S]*?)\s*<\/JUDUL_BAB>/i
+    );
+
+
+  const contentMatch =
+    hasil.match(
+      /<ISI_BAB>\s*([\s\S]*?)\s*<\/ISI_BAB>/i
+    );
+
+
+  if (titleMatch) {
+
+    judul =
+      titleMatch[1].trim();
+
+  }
+
+
+  if (contentMatch) {
+
+    hasil =
+      contentMatch[1].trim();
+
+  } else {
+
+    // -------------------------------------------------
+    // FORMAT CADANGAN
+    // -------------------------------------------------
+
+    const titleLine =
+      hasil.match(
+        /^\s*(?:JUDUL_BAB|Judul Bab|Judul)\s*:\s*(.+?)(?:\n|$)/i
+      );
+
+
+    if (titleLine) {
+
+      judul =
+        titleLine[1].trim();
+
+
+      hasil =
+        hasil.substring(
+          titleLine[0].length
+        ).trim();
+
+    }
+
+  }
+
+
+  judul =
+    bersihkanJudulBab(
+      judul,
+      nomorBab
+    );
+
+
+  hasil =
+    bersihkanHasilAI(
+      hasil
+    );
+
+
+  return {
+    judul_bab:
+      judul,
+
+    isi_bab:
+      hasil
+  };
+}
+
+
+// =====================================================
 // AMBIL USER SUPABASE
 // =====================================================
 
-async function getUser(request, env) {
+async function getUser(
+  request,
+  env
+) {
 
   const authorization =
-    request.headers.get("Authorization");
+    request.headers.get(
+      "Authorization"
+    );
+
 
   if (!authorization) {
     return null;
   }
+
 
   const response =
     await fetch(
@@ -370,7 +566,7 @@ async function callGroq(
 
 
 // =====================================================
-// SYSTEM PROMPT NOVEL
+// SYSTEM PROMPT NOVEL UMUM
 // =====================================================
 
 const NOVEL_SYSTEM_PROMPT = `
@@ -430,9 +626,9 @@ Jangan menggunakan format esai.
 
 Jangan membuat heading.
 
-Jangan memulai dengan kata "Bab".
+Jangan memulai cerita dengan kata "Bab".
 
-Hasil akhir hanya boleh berupa cerita novel berbahasa Indonesia.
+Hasil akhir harus berupa cerita novel berbahasa Indonesia.
 
 Jangan menulis instruksi sebelum cerita.
 
@@ -443,7 +639,137 @@ Mulai langsung dengan cerita.
 
 
 // =====================================================
-// TULIS CEPAT
+// SYSTEM PROMPT BAB BERIKUTNYA
+// =====================================================
+
+const NOVEL_CHAPTER_SYSTEM_PROMPT = `
+Kamu adalah penulis novel profesional berbahasa Indonesia
+sekaligus editor kontinuitas cerita.
+
+Kamu sedang menulis bab lanjutan dari sebuah novel yang sudah berjalan.
+
+Prioritas utama:
+
+1. Konsistensi cerita.
+2. Konsistensi karakter.
+3. Konsistensi hubungan.
+4. Konsistensi waktu dan tempat.
+5. Konsistensi fakta yang sudah terjadi.
+6. Perkembangan konflik yang masuk akal.
+7. Perkembangan emosi yang natural.
+8. Kualitas prosa.
+9. Dialog yang hidup.
+10. Hook atau konsekuensi yang membuat pembaca ingin melanjutkan.
+
+Jangan mengulang kejadian bab sebelumnya secara panjang.
+
+Jangan membuat karakter tiba-tiba berubah sifat tanpa alasan.
+
+Jangan menyelesaikan konflik utama terlalu cepat.
+
+Jangan membuat hubungan romantis berkembang secara tiba-tiba
+jika cerita sebelumnya belum membangunnya.
+
+Jangan memperkenalkan fakta besar yang bertentangan dengan
+informasi cerita sebelumnya.
+
+Genre harus terasa dalam adegan, konflik, atmosfer, dialog,
+dan perkembangan cerita.
+
+Nuansa harus terasa secara alami, bukan dengan menyebutkan
+nama nuansa tersebut.
+
+Gaya penulisan harus konsisten dengan gaya novel yang diberikan.
+
+Jangan menampilkan analisis.
+
+Jangan menampilkan penjelasan.
+
+Jangan menampilkan catatan untuk AI.
+
+Jangan menampilkan proses berpikir.
+
+Jangan menggunakan Markdown.
+
+Jangan menggunakan bullet point.
+
+Jangan menggunakan numbering.
+
+Jangan membuat heading.
+
+Jangan menulis "Bab" sebagai heading isi cerita.
+
+Keluaran harus menggunakan format berikut secara persis:
+
+<JUDUL_BAB>
+judul bab
+</JUDUL_BAB>
+
+<ISI_BAB>
+isi cerita novel
+</ISI_BAB>
+
+Judul harus merupakan judul bab yang menarik dan terasa
+sebagai bagian dari novel sungguhan.
+
+Judul wajib mencerminkan perkembangan penting dalam bab,
+tetapi tidak boleh menjadi ringkasan datar isi bab.
+
+Judul harus mempertimbangkan genre, nuansa, gaya, konflik,
+atmosfer, simbol, emosi, atau peristiwa penting dalam bab.
+
+Judul tidak boleh generik seperti:
+"Bab Baru",
+"Kelanjutan Cerita",
+"Awal Baru",
+"Konflik Baru",
+"Masalah Baru",
+"Kejadian Tak Terduga",
+kecuali konteks cerita benar-benar membuat judul tersebut
+sangat relevan.
+
+Jangan menggunakan pola judul yang sama terus-menerus.
+
+Jika genre misteri, judul boleh memiliki rasa teka-teki,
+petunjuk, rahasia, identitas, suasana, atau simbol,
+tetapi jangan memaksakan kata-kata tersebut.
+
+Jika genre thriller, judul boleh memiliki rasa ancaman,
+waktu, pengejaran, keputusan, tekanan, atau bahaya.
+
+Jika genre romansa, judul dapat menonjolkan perasaan,
+jarak, pertemuan, pilihan, pesan, kerinduan, atau perubahan
+hubungan.
+
+Jika genre drama, judul dapat menonjolkan keputusan,
+keluarga, luka, pengorbanan, kehilangan, atau hubungan.
+
+Jika genre horor, judul dapat memanfaatkan atmosfer,
+tempat, suara, benda, kejadian aneh, atau kehadiran.
+
+Jika genre fantasi, judul dapat memanfaatkan dunia,
+artefak, kerajaan, kutukan, perjalanan, kekuatan, atau mitos.
+
+Jika genre silat/wuxia, judul dapat mencerminkan perguruan,
+jurus, pendekar, pedang, kitab, dendam, perseteruan,
+perjalanan, atau suasana dunia persilatan.
+
+Jika genre lain, sesuaikan pendekatan judul dengan genre tersebut.
+
+Jangan meniru judul karya terkenal.
+
+Jangan menggunakan judul yang terlalu panjang.
+
+Utamakan judul sekitar 2 sampai 8 kata jika memungkinkan.
+
+ISI_BAB harus berupa prosa novel utuh.
+
+Target panjang isi bab sekitar 1800 sampai 2500 kata jika memungkinkan.
+`;
+
+
+// =====================================================
+// TULIS CEPAT / AI WRITER
 // =====================================================
 
 async function tulisCepat(
@@ -472,6 +798,7 @@ async function tulisCepat(
     return json(
       {
         success: false,
+
         error:
           "Ide tulisan belum diisi."
       },
@@ -496,7 +823,8 @@ Mulai dari adegan pertama.
 
 Gunakan narasi dan dialog yang alami.
 
-Kembangkan karakter, suasana, konflik, emosi, tindakan, dan kejadian secara bertahap.
+Kembangkan karakter, suasana, konflik, emosi, tindakan,
+dan kejadian secara bertahap.
 
 Jangan memberikan penjelasan sebelum cerita.
 
@@ -558,6 +886,7 @@ OUTPUT HANYA CERITA.
 
           "Prefer":
             "return=minimal"
+
         },
 
         body:
@@ -635,14 +964,18 @@ async function tulisBabBerikutnya(
 ) {
 
   const novelId =
-    Number(body?.novel_id);
+    Number(
+      body?.novel_id
+    );
 
 
   if (!novelId) {
 
     return json(
       {
-        success: false,
+        success:
+          false,
+
         error:
           "ID novel tidak ditemukan."
       },
@@ -680,8 +1013,12 @@ async function tulisBabBerikutnya(
     await fetch(
       `${env.SUPABASE_URL}/rest/v1/novel?id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*`,
       {
-        method: "GET",
-        headers: supabaseHeaders
+        method:
+          "GET",
+
+        headers:
+          supabaseHeaders
+
       }
     );
 
@@ -708,7 +1045,9 @@ async function tulisBabBerikutnya(
 
     return json(
       {
-        success: false,
+        success:
+          false,
+
         error:
           "Novel tidak ditemukan atau bukan milik akun ini."
       },
@@ -723,15 +1062,19 @@ async function tulisBabBerikutnya(
 
 
   // ===================================================
-  // AMBIL BAB-BAB SEBELUMNYA
+  // AMBIL BAB
   // ===================================================
 
   const babResponse =
     await fetch(
       `${env.SUPABASE_URL}/rest/v1/novel_bab?novel_id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*&order=nomor_bab.asc`,
       {
-        method: "GET",
-        headers: supabaseHeaders
+        method:
+          "GET",
+
+        headers:
+          supabaseHeaders
+
       }
     );
 
@@ -757,11 +1100,18 @@ async function tulisBabBerikutnya(
       : [];
 
 
+  // ===================================================
+  // NOMOR BAB BARU
+  // ===================================================
+
   const nomorBabBaru =
     semuaBab.length
       ? Math.max(
           ...semuaBab.map(
-            b => Number(b.nomor_bab) || 0
+            b =>
+              Number(
+                b.nomor_bab
+              ) || 0
           )
         ) + 1
       : 1;
@@ -775,8 +1125,12 @@ async function tulisBabBerikutnya(
     await fetch(
       `${env.SUPABASE_URL}/rest/v1/novel_karakter?novel_id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*`,
       {
-        method: "GET",
-        headers: supabaseHeaders
+        method:
+          "GET",
+
+        headers:
+          supabaseHeaders
+
       }
     );
 
@@ -793,151 +1147,357 @@ async function tulisBabBerikutnya(
 
 
   // ===================================================
-  // KONTEKS CERITA
+  // BAB TERAKHIR
   // ===================================================
 
   const babTerakhir =
     semuaBab.length
-      ? semuaBab[semuaBab.length - 1]
+      ? semuaBab[
+          semuaBab.length - 1
+        ]
       : null;
 
 
-  // Jangan mengirim seluruh novel jika sudah sangat panjang.
-  // Ambil beberapa bab terakhir sebagai konteks utama.
+  // ===================================================
+  // BAB KONTEKS
+  // ===================================================
 
   const babKonteks =
-    semuaBab.slice(-5);
+    semuaBab.slice(
+      -5
+    );
 
 
   let konteksBab =
     "Belum ada bab sebelumnya.";
 
-  if (babKonteks.length) {
+
+  if (
+    babKonteks.length
+  ) {
 
     konteksBab =
       babKonteks
-        .map(b => {
+        .map(
+          b => {
 
-          return `
+            return `
 BAB ${b.nomor_bab}
 Judul: ${b.judul_bab || ""}
 Isi:
-${String(b.isi_bab || "").slice(0, 12000)}
+${String(
+  b.isi_bab || ""
+).slice(
+  0,
+  12000
+)}
 `;
 
-        })
-        .join("\n\n");
+          }
+        )
+        .join(
+          "\n\n"
+        );
 
   }
 
+
+  // ===================================================
+  // KONTEKS JUDUL BAB SEBELUMNYA
+  // ===================================================
+
+  let konteksJudul =
+    "Belum ada judul bab sebelumnya.";
+
+
+  if (
+    semuaBab.length
+  ) {
+
+    konteksJudul =
+      semuaBab
+        .slice(
+          -12
+        )
+        .map(
+          b =>
+            `Bab ${b.nomor_bab} — ${b.judul_bab || ""}`
+        )
+        .join(
+          "\n"
+        );
+
+  }
+
+
+  // ===================================================
+  // KONTEKS KARAKTER
+  // ===================================================
 
   let konteksKarakter =
     "Belum ada data karakter.";
 
-  if (karakter.length) {
+
+  if (
+    karakter.length
+  ) {
 
     konteksKarakter =
       karakter
-        .map(k => {
+        .map(
+          k => {
 
-          return `
-Nama: ${k.nama || ""}
-Umur: ${k.umur || ""}
-Peran: ${k.peran || ""}
-Sifat: ${k.sifat || ""}
-Latar belakang: ${k.latar_belakang || ""}
-Hubungan: ${k.hubungan || ""}
-Tujuan: ${k.tujuan || ""}
-Rahasia: ${k.rahasia || ""}
+            return `
+Nama:
+${k.nama || ""}
+
+Umur:
+${k.umur || ""}
+
+Peran:
+${k.peran || ""}
+
+Sifat:
+${k.sifat || ""}
+
+Latar belakang:
+${k.latar_belakang || ""}
+
+Hubungan:
+${k.hubungan || ""}
+
+Tujuan:
+${k.tujuan || ""}
+
+Rahasia:
+${k.rahasia || ""}
+
+Catatan:
+${k.catatan || ""}
 `;
 
-        })
-        .join("\n\n");
+          }
+        )
+        .join(
+          "\n\n"
+        );
 
   }
 
 
   // ===================================================
-  // PROMPT BAB BERIKUTNYA
+  // PROMPT BAB
   // ===================================================
 
   const userPrompt = `
-Kamu sedang melanjutkan sebuah novel.
+Kamu sedang melanjutkan sebuah novel yang sedang berjalan.
 
-JUDUL NOVEL:
+INFORMASI NOVEL
+
+Judul novel:
 ${novel.judul || ""}
 
-GENRE:
+Genre:
 ${novel.genre || "Drama"}
 
-GAYA:
+Gaya penulisan:
 ${novel.gaya || "Natural"}
 
-NUANSA:
+Nuansa:
 ${novel.nuansa || "Emosional"}
 
-MODE:
+Mode:
 ${novel.mode || "Normal"}
 
-PREMIS:
+Premis:
 ${novel.premis || ""}
 
-BAB YANG AKAN DITULIS:
+
+BAB YANG AKAN DITULIS
+
+Nomor:
 ${nomorBabBaru}
 
-DATA KARAKTER:
+
+POLA JUDUL BAB SEBELUMNYA
+
+${konteksJudul}
+
+
+KARAKTER
+
 ${konteksKarakter}
 
-BAB-BAB TERAKHIR:
+
+BAB-BAB TERAKHIR
+
 ${konteksBab}
 
-TUGAS:
 
-Tulis Bab ${nomorBabBaru} yang benar-benar melanjutkan kejadian sebelumnya.
+TUGAS UTAMA
+
+Tulis Bab ${nomorBabBaru} sebagai kelanjutan langsung dari cerita.
 
 Jangan mengulang bab sebelumnya.
 
-Jangan membuat alur baru yang tidak berhubungan.
+Pertahankan fakta cerita yang sudah ada.
 
-Pertahankan karakter, hubungan, konflik, tempat, waktu, dan fakta cerita yang sudah ada.
+Pertahankan kepribadian dan hubungan karakter.
 
-Kembangkan kejadian baru secara natural.
+Jika bab terakhir meninggalkan konflik, pertanyaan,
+rahasia, keputusan, ancaman, atau konsekuensi,
+biarkan hal tersebut memengaruhi bab baru.
 
-Jika bab sebelumnya berakhir dengan konflik atau pertanyaan, lanjutkan konsekuensinya.
+Bangun perkembangan cerita secara bertahap.
 
-Bangun adegan, dialog, emosi, ketegangan, dan perkembangan hubungan.
+Jangan menyelesaikan konflik utama terlalu cepat.
 
-Jangan membuat ringkasan.
+Jangan memasukkan tokoh baru tanpa alasan cerita yang kuat.
 
-Jangan menjelaskan apa yang kamu lakukan.
+Jangan membuat perubahan hubungan secara tiba-tiba.
 
-Jangan menulis judul bab.
+Gunakan adegan konkret, dialog, tindakan, emosi,
+dan suasana.
 
-Jangan menulis "Bab ${nomorBabBaru}" sebagai heading.
+Genre harus terasa dari cara cerita berkembang,
+bukan hanya dari kata-kata yang digunakan.
 
-OUTPUT HANYA ISI CERITA.
+Nuansa harus terasa dari atmosfer dan emosi cerita.
 
-Tulis sekitar 1800 sampai 2200 kata jika memungkinkan.
+Gaya penulisan harus konsisten.
+
+Buat bab sekitar 1800 sampai 2500 kata jika memungkinkan.
+
+
+ATURAN JUDUL
+
+Buat judul yang benar-benar cocok untuk bab ini.
+
+Judul harus mempertimbangkan:
+
+- genre
+- nuansa
+- gaya
+- konflik
+- perkembangan karakter
+- peristiwa penting
+- atmosfer
+- simbol atau objek penting
+- perubahan hubungan
+- konsekuensi dari bab sebelumnya
+
+Judul tidak boleh hanya merangkum isi bab.
+
+Judul harus membuat pembaca penasaran.
+
+Judul tidak boleh menjadi spoiler besar.
+
+Judul harus terasa sebagai bagian dari novel yang sama.
+
+Perhatikan pola judul bab sebelumnya,
+tetapi jangan menirunya secara mekanis.
+
+Jangan mengulang kata atau pola judul
+secara terus-menerus tanpa alasan.
+
+Hindari judul generik seperti:
+
+"Bab Baru"
+"Kelanjutan Cerita"
+"Awal Baru"
+"Konflik Baru"
+"Masalah Baru"
+"Kejadian Tak Terduga"
+
+kecuali benar-benar relevan.
+
+Jika genre misteri,
+judul dapat terasa seperti teka-teki,
+petunjuk, rahasia, identitas, benda,
+tempat, atau kejadian yang mencurigakan.
+
+Jika genre thriller,
+judul dapat terasa seperti ancaman,
+tekanan waktu, pengejaran, keputusan,
+bahaya, atau konsekuensi.
+
+Jika genre romansa,
+judul dapat terasa seperti perasaan,
+jarak, pertemuan, pesan, pilihan,
+kerinduan, atau perubahan hubungan.
+
+Jika genre drama,
+judul dapat terasa seperti keluarga,
+keputusan, luka, pengorbanan,
+kehilangan, pertentangan, atau hubungan.
+
+Jika genre horor,
+judul dapat memanfaatkan atmosfer,
+tempat, suara, benda, malam,
+atau sesuatu yang tidak seharusnya hadir.
+
+Jika genre fantasi,
+judul dapat memanfaatkan dunia,
+artefak, kerajaan, kutukan,
+kekuatan, perjalanan, atau mitos.
+
+Jika genre silat/wuxia,
+judul dapat mencerminkan perguruan,
+jurus, pendekar, pedang, kitab,
+dendam, perseteruan, perjalanan,
+atau suasana dunia persilatan.
+
+Jika genre campuran,
+gabungkan rasa genre secara natural.
+
+Jangan meniru judul karya terkenal.
+
+Utamakan judul sekitar 2 sampai 8 kata.
+
+HASIL WAJIB DALAM FORMAT INI:
+
+<JUDUL_BAB>
+tulis judul bab di sini
+</JUDUL_BAB>
+
+<ISI_BAB>
+tulis isi cerita lengkap di sini
+</ISI_BAB>
+
+Jangan menambahkan apa pun di luar dua tag tersebut.
 `;
 
 
   // ===================================================
-  // PANGGIL AI
+  // PANGGIL GROQ
   // ===================================================
 
   const hasilMentah =
     await callGroq(
-      NOVEL_SYSTEM_PROMPT,
+      NOVEL_CHAPTER_SYSTEM_PROMPT,
       userPrompt,
       env,
-      6500
+      7500
     );
+
+
+  // ===================================================
+  // PISAHKAN JUDUL DAN ISI
+  // ===================================================
+
+  const hasilBab =
+    ekstrakJudulDanIsi(
+      hasilMentah,
+      nomorBabBaru
+    );
+
+
+  const judulBab =
+    hasilBab.judul_bab;
 
 
   const hasilTulisan =
-    bersihkanHasilAI(
-      hasilMentah
-    );
+    hasilBab.isi_bab;
 
 
   if (!hasilTulisan) {
@@ -949,18 +1509,15 @@ Tulis sekitar 1800 sampai 2200 kata jika memungkinkan.
   }
 
 
-  // ===================================================
-  // JUDUL BAB
-  // ===================================================
+  if (
+    hitungKata(
+      hasilTulisan
+    ) < 500
+  ) {
 
-  let judulBab =
-    `Bab ${nomorBabBaru}`;
-
-
-  if (babTerakhir?.judul_bab) {
-
-    judulBab =
-      `Bab ${nomorBabBaru}`;
+    console.log(
+      `Peringatan: Bab ${nomorBabBaru} hanya ${hitungKata(hasilTulisan)} kata.`
+    );
 
   }
 
@@ -973,12 +1530,16 @@ Tulis sekitar 1800 sampai 2200 kata jika memungkinkan.
     await fetch(
       `${env.SUPABASE_URL}/rest/v1/novel_bab`,
       {
-        method: "POST",
+        method:
+          "POST",
 
         headers: {
+
           ...supabaseHeaders,
+
           "Prefer":
             "return=representation"
+
         },
 
         body:
@@ -1002,8 +1563,11 @@ Tulis sekitar 1800 sampai 2200 kata jika memungkinkan.
             ringkasan:
               "",
 
+            // Field ini memang jumlah karakter.
+            // Jumlah kata dihitung terpisah.
+
             jumlah_karakter:
-              hitungKata(
+              hitungKarakter(
                 hasilTulisan
               ),
 
@@ -1040,12 +1604,16 @@ Tulis sekitar 1800 sampai 2200 kata jika memungkinkan.
     await fetch(
       `${env.SUPABASE_URL}/rest/v1/novel?id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}`,
       {
-        method: "PATCH",
+        method:
+          "PATCH",
 
         headers: {
+
           ...supabaseHeaders,
+
           "Prefer":
             "return=minimal"
+
         },
 
         body:
@@ -1063,10 +1631,13 @@ Tulis sekitar 1800 sampai 2200 kata jika memungkinkan.
     );
 
 
-  if (!updateNovelResponse.ok) {
+  if (
+    !updateNovelResponse.ok
+  ) {
 
     const updateError =
       await updateNovelResponse.text();
+
 
     console.log(
       "Gagal update jumlah bab:",
@@ -1085,12 +1656,16 @@ Tulis sekitar 1800 sampai 2200 kata jika memungkinkan.
     await fetch(
       `${env.SUPABASE_URL}/rest/v1/riwayat_penulisan`,
       {
-        method: "POST",
+        method:
+          "POST",
 
         headers: {
+
           ...supabaseHeaders,
+
           "Prefer":
             "return=minimal"
+
         },
 
         body:
@@ -1100,7 +1675,7 @@ Tulis sekitar 1800 sampai 2200 kata jika memungkinkan.
               user.id,
 
             judul:
-              `${novel.judul || "Novel"} - Bab ${nomorBabBaru}`,
+              `${novel.judul || "Novel"} - Bab ${nomorBabBaru} - ${judulBab}`,
 
             jenis:
               "Novel",
@@ -1141,7 +1716,7 @@ Tulis sekitar 1800 sampai 2200 kata jika memungkinkan.
       true,
 
     message:
-      `Bab ${nomorBabBaru} berhasil ditulis dan disimpan.`,
+      `Bab ${nomorBabBaru} — ${judulBab} berhasil ditulis dan disimpan.`,
 
     novel_id:
       novelId,
@@ -1163,6 +1738,11 @@ Tulis sekitar 1800 sampai 2200 kata jika memungkinkan.
 
     jumlah_kata:
       hitungKata(
+        hasilTulisan
+      ),
+
+    jumlah_karakter:
+      hitungKarakter(
         hasilTulisan
       )
 
@@ -1190,7 +1770,8 @@ async function ambilRiwayat(
     await fetch(
       `${env.SUPABASE_URL}/rest/v1/riwayat_penulisan?user_id=eq.${encodeURIComponent(user.id)}&select=*&order=created_at.desc`,
       {
-        method: "GET",
+        method:
+          "GET",
 
         headers: {
 
@@ -1221,6 +1802,7 @@ async function ambilRiwayat(
 
         error:
           data
+
       },
       response.status
     );
@@ -1256,7 +1838,8 @@ export default {
     // -------------------------------------------------
 
     if (
-      request.method === "OPTIONS"
+      request.method ===
+      "OPTIONS"
     ) {
 
       return new Response(
@@ -1267,6 +1850,7 @@ export default {
 
           headers:
             corsHeaders
+
         }
       );
 
@@ -1278,7 +1862,8 @@ export default {
     // -------------------------------------------------
 
     if (
-      request.method === "GET"
+      request.method ===
+      "GET"
     ) {
 
       return json({
@@ -1302,7 +1887,8 @@ export default {
     // -------------------------------------------------
 
     if (
-      request.method !== "POST"
+      request.method !==
+      "POST"
     ) {
 
       return json(
@@ -1312,6 +1898,7 @@ export default {
 
           error:
             "Method tidak diizinkan."
+
         },
         405
       );
@@ -1339,6 +1926,7 @@ export default {
 
           error:
             "Sesi login tidak valid. Silakan login kembali."
+
         },
         401
       );
@@ -1351,6 +1939,7 @@ export default {
     // -------------------------------------------------
 
     let body;
+
 
     try {
 
@@ -1366,6 +1955,7 @@ export default {
 
           error:
             "Data JSON tidak valid."
+
         },
         400
       );
@@ -1383,50 +1973,53 @@ export default {
 
     try {
 
-switch (action) {
+      switch (action) {
 
-  case "write":
+        case "write":
 
-    return await tulisCepat(
-      request,
-      env,
-      user,
-      body
-    );
-
-
-  case "write_chapter":
-
-    return await tulisBabBerikutnya(
-      request,
-      env,
-      user,
-      body
-    );
+          return await tulisCepat(
+            request,
+            env,
+            user,
+            body
+          );
 
 
-  case "history":
+        case "write_chapter":
 
-    return await ambilRiwayat(
-      request,
-      env,
-      user
-    );
+          return await tulisBabBerikutnya(
+            request,
+            env,
+            user,
+            body
+          );
 
 
-  default:
+        case "history":
 
-    return json(
-      {
-        success: false,
-        error:
-          "Action tidak dikenal: " +
-          action
-      },
-      400
-    );
+          return await ambilRiwayat(
+            request,
+            env,
+            user
+          );
 
-}
+
+        default:
+
+          return json(
+            {
+              success:
+                false,
+
+              error:
+                "Action tidak dikenal: " +
+                action
+
+            },
+            400
+          );
+
+      }
 
     } catch (error) {
 
@@ -1444,6 +2037,7 @@ switch (action) {
           error:
             error.message ||
             "Terjadi kesalahan pada backend."
+
         },
         500
       );
