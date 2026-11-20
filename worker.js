@@ -2,17 +2,8 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "https://pena-ai-engine.pages.dev",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Max-Age": "86400"
 };
-
-const SUPABASE_URL = env("SUPABASE_URL");
-const SUPABASE_ANON_KEY = env("SUPABASE_ANON_KEY");
-const GROQ_API_KEY = env("GROQ_API_KEY");
-
-function env(name) {
-  return typeof globalThis[name] !== "undefined"
-    ? globalThis[name]
-    : null;
-}
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -29,54 +20,61 @@ function cleanText(text, max = 5000) {
   return String(text).slice(0, max);
 }
 
-async function supabaseFetch(path, options = {}) {
-  const headers = {
-    "apikey": SUPABASE_ANON_KEY,
-    "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-    "Content-Type": "application/json",
-    ...(options.headers || {})
-  };
-
-  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...options,
-    headers
-  });
+function hitungKata(text) {
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .length;
 }
 
-async function supabaseUserFetch(path, token, options = {}) {
+/* =========================
+   SUPABASE
+========================= */
+
+async function supabaseUserFetch(path, token, env, options = {}) {
   const headers = {
-    "apikey": SUPABASE_ANON_KEY,
+    "apikey": env.SUPABASE_ANON_KEY,
     "Authorization": `Bearer ${token}`,
     "Content-Type": "application/json",
     ...(options.headers || {})
   };
 
-  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  return fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
     ...options,
     headers
   });
 }
 
-async function getUser(token) {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${token}`
+async function getUser(token, env) {
+  const res = await fetch(
+    `${env.SUPABASE_URL}/auth/v1/user`,
+    {
+      headers: {
+        "apikey": env.SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${token}`
+      }
     }
-  });
+  );
 
-  if (!res.ok) return null;
+  if (!res.ok) {
+    return null;
+  }
 
   return await res.json();
 }
 
-async function callGroq(messages, maxOutputTokens = 4500) {
+/* =========================
+   GROQ
+========================= */
+
+async function callGroq(messages, env, maxOutputTokens = 4500) {
   const response = await fetch(
     "https://api.groq.com/openai/v1/responses",
     {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${GROQ_API_KEY}`,
+        "Authorization": `Bearer ${env.GROQ_API_KEY}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -115,36 +113,18 @@ async function callGroq(messages, maxOutputTokens = 4500) {
   return text.trim();
 }
 
-function hitungKata(text) {
-  return text
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .length;
-}
+/* =========================
+   QUICK WRITE
+========================= */
 
-function ambilNomorBab(babList) {
-  if (!babList || !babList.length) return 1;
-
-  let terbesar = 0;
-
-  for (const bab of babList) {
-    const n = Number(bab.nomor_bab || 0);
-    if (n > terbesar) terbesar = n;
-  }
-
-  return terbesar + 1;
-}
-
-async function tulisCepat(body, user, token) {
+async function tulisCepat(body, user, token, env) {
   const judul = cleanText(body.judul, 300);
   const perintah = cleanText(body.prompt, 5000);
+  const mode = body.mode || "Normal";
 
   if (!perintah) {
     throw new Error("Perintah tulisan belum diisi.");
   }
-
-  const mode = body.mode || "Normal";
 
   const systemPrompt = `
 Kamu adalah penulis novel profesional berbahasa Indonesia.
@@ -201,7 +181,11 @@ Tulislah cerita lengkap berdasarkan perintah tersebut.
     }
   ];
 
-  const hasil = await callGroq(messages, 4500);
+  const hasil = await callGroq(
+    messages,
+    env,
+    4500
+  );
 
   if (!hasil) {
     throw new Error("AI tidak menghasilkan tulisan.");
@@ -215,7 +199,11 @@ Tulislah cerita lengkap berdasarkan perintah tersebut.
   });
 }
 
-async function buatNovel(body, user, token) {
+/* =========================
+   BUAT NOVEL
+========================= */
+
+async function buatNovel(body, user, token, env) {
   const data = {
     user_id: user.id,
     judul: cleanText(body.judul, 300),
@@ -232,10 +220,11 @@ async function buatNovel(body, user, token) {
   const res = await supabaseUserFetch(
     "novel",
     token,
+    env,
     {
       method: "POST",
       headers: {
-        Prefer: "return=representation"
+        "Prefer": "return=representation"
       },
       body: JSON.stringify(data)
     }
@@ -254,10 +243,15 @@ async function buatNovel(body, user, token) {
   });
 }
 
-async function ambilNovel(novelId, user, token) {
+/* =========================
+   AMBIL NOVEL
+========================= */
+
+async function ambilNovel(novelId, user, token, env) {
   const res = await supabaseUserFetch(
     `novel?id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*`,
-    token
+    token,
+    env
   );
 
   if (!res.ok) {
@@ -273,41 +267,68 @@ async function ambilNovel(novelId, user, token) {
   return rows[0];
 }
 
-async function ambilKarakter(novelId, user, token) {
+/* =========================
+   KARAKTER
+========================= */
+
+async function ambilKarakter(novelId, user, token, env) {
   const res = await supabaseUserFetch(
     `novel_karakter?novel_id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*&order=id.asc`,
-    token
+    token,
+    env
   );
 
-  if (!res.ok) return [];
+  if (!res.ok) {
+    return [];
+  }
 
   return await res.json();
 }
 
-async function ambilMemory(novelId, user, token) {
+/* =========================
+   MEMORY
+========================= */
+
+async function ambilMemory(novelId, user, token, env) {
   const res = await supabaseUserFetch(
     `novel_memory?novel_id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*&order=penting.desc,updated_at.desc&limit=15`,
-    token
+    token,
+    env
   );
 
-  if (!res.ok) return [];
+  if (!res.ok) {
+    return [];
+  }
 
   return await res.json();
 }
 
-async function ambilBabTerakhir(novelId, user, token) {
+/* =========================
+   BAB TERAKHIR
+========================= */
+
+async function ambilBabTerakhir(novelId, user, token, env) {
   const res = await supabaseUserFetch(
     `novel_bab?novel_id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=nomor_bab,judul_bab,isi_bab,ringkasan&order=nomor_bab.desc&limit=1`,
-    token
+    token,
+    env
   );
 
-  if (!res.ok) return [];
+  if (!res.ok) {
+    return [];
+  }
 
   return await res.json();
 }
 
+/* =========================
+   FORMAT KARAKTER
+========================= */
+
 function formatKarakter(karakter) {
-  if (!karakter.length) return "Belum ada data karakter.";
+  if (!karakter.length) {
+    return "Belum ada data karakter.";
+  }
 
   return karakter
     .slice(0, 15)
@@ -326,8 +347,14 @@ Rahasia: ${k.rahasia || "-"}
     .join("\n");
 }
 
+/* =========================
+   FORMAT MEMORY
+========================= */
+
 function formatMemory(memory) {
-  if (!memory.length) return "Belum ada memory khusus.";
+  if (!memory.length) {
+    return "Belum ada memory khusus.";
+  }
 
   return memory
     .slice(0, 10)
@@ -342,32 +369,64 @@ ${cleanText(m.isi, 800)}
     .join("\n");
 }
 
-async function tulisBab(body, user, token) {
+/* =========================
+   TULIS BAB
+========================= */
+
+async function tulisBab(body, user, token, env) {
   const novelId = body.novel_id;
 
   if (!novelId) {
     throw new Error("ID novel tidak ditemukan.");
   }
 
-  const novel = await ambilNovel(novelId, user, token);
-  const karakter = await ambilKarakter(novelId, user, token);
-  const memory = await ambilMemory(novelId, user, token);
-  const babTerakhir = await ambilBabTerakhir(novelId, user, token);
+  const novel = await ambilNovel(
+    novelId,
+    user,
+    token,
+    env
+  );
 
-  const nomorBab = Number(novel.bab_selesai || 0) + 1;
+  const karakter = await ambilKarakter(
+    novelId,
+    user,
+    token,
+    env
+  );
+
+  const memory = await ambilMemory(
+    novelId,
+    user,
+    token,
+    env
+  );
+
+  const babTerakhir = await ambilBabTerakhir(
+    novelId,
+    user,
+    token,
+    env
+  );
+
+  const nomorBab =
+    Number(novel.bab_selesai || 0) + 1;
 
   let konteksBabSebelumnya = "";
 
   if (babTerakhir.length) {
     const bab = babTerakhir[0];
 
-    // Hanya ambil bagian akhir bab sebelumnya.
-    // Ini sangat menghemat token.
-    const isi = String(bab.isi_bab || "");
+    const isi = String(
+      bab.isi_bab || ""
+    );
 
     konteksBabSebelumnya = `
 BAB SEBELUMNYA: ${bab.nomor_bab}
-${cleanText(isi.slice(-6500), 6500)}
+
+${cleanText(
+  isi.slice(-6500),
+  6500
+)}
 `;
   }
 
@@ -395,7 +454,15 @@ Jangan menulis:
 
 Langsung mulai dengan cerita.
 
-Gunakan narasi, dialog, tindakan, suasana, pikiran, emosi, konflik, dan perkembangan kejadian.
+Gunakan:
+- narasi
+- dialog
+- tindakan
+- suasana
+- pikiran
+- emosi
+- konflik
+- perkembangan kejadian
 
 Jaga kesinambungan dengan cerita sebelumnya.
 
@@ -440,6 +507,7 @@ ${konteksBabSebelumnya}
 Sekarang tulis BAB ${nomorBab}.
 
 Jangan memberikan judul bab terpisah.
+
 Langsung tulis isi novel.
 
 Panjang sekitar 1.800-2.200 kata.
@@ -456,6 +524,7 @@ Panjang sekitar 1.800-2.200 kata.
         content: userPrompt
       }
     ],
+    env,
     4500
   );
 
@@ -463,9 +532,11 @@ Panjang sekitar 1.800-2.200 kata.
     throw new Error("AI tidak menghasilkan bab.");
   }
 
-  const jumlahKata = hitungKata(hasil);
+  const jumlahKata =
+    hitungKata(hasil);
 
-  const judulBab = `Bab ${nomorBab}`;
+  const judulBab =
+    `Bab ${nomorBab}`;
 
   const babData = {
     novel_id: novelId,
@@ -473,200 +544,411 @@ Panjang sekitar 1.800-2.200 kata.
     nomor_bab: nomorBab,
     judul_bab: judulBab,
     isi_bab: hasil,
-    ringkasan: cleanText(hasil.slice(0, 700), 700),
+    ringkasan: cleanText(
+      hasil.slice(0, 700),
+      700
+    ),
     jumlah_karakter: hasil.length,
     status: "selesai"
   };
 
-  const insertBab = await supabaseUserFetch(
-    "novel_bab",
-    token,
-    {
-      method: "POST",
-      headers: {
-        Prefer: "return=representation"
-      },
-      body: JSON.stringify(babData)
-    }
-  );
+  const insertBab =
+    await supabaseUserFetch(
+      "novel_bab",
+      token,
+      env,
+      {
+        method: "POST",
+        headers: {
+          "Prefer": "return=representation"
+        },
+        body: JSON.stringify(
+          babData
+        )
+      }
+    );
 
   if (!insertBab.ok) {
-    const err = await insertBab.text();
-    throw new Error(`Gagal menyimpan bab: ${err}`);
+    const err =
+      await insertBab.text();
+
+    throw new Error(
+      `Gagal menyimpan bab: ${err}`
+    );
   }
 
-  const updateNovel = await supabaseUserFetch(
-    `novel?id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}`,
-    token,
-    {
-      method: "PATCH",
-      body: JSON.stringify({
-        bab_selesai: nomorBab,
-        updated_at: new Date().toISOString()
-      })
-    }
-  );
+  const updateNovel =
+    await supabaseUserFetch(
+      `novel?id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}`,
+      token,
+      env,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          bab_selesai:
+            nomorBab,
+          updated_at:
+            new Date().toISOString()
+        })
+      }
+    );
 
   if (!updateNovel.ok) {
-    console.log("Peringatan: nomor bab novel gagal diperbarui.");
+    console.log(
+      "Peringatan: nomor bab novel gagal diperbarui."
+    );
   }
 
-  // Simpan penggunaan AI.
   await supabaseUserFetch(
     "penggunaan_ai",
     token,
+    env,
     {
       method: "POST",
       body: JSON.stringify({
         user_id: user.id,
-        jenis_tulisan: "novel_bab",
-        jumlah_karakter: hasil.length,
-        model_ai: "openai/gpt-oss-120b",
-        status: "berhasil"
+        jenis_tulisan:
+          "novel_bab",
+        jumlah_karakter:
+          hasil.length,
+        model_ai:
+          "openai/gpt-oss-120b",
+        status:
+          "berhasil"
       })
     }
   );
 
   return json({
     success: true,
-    nomor_bab: nomorBab,
-    judul_bab: judulBab,
-    isi_bab: hasil,
-    jumlah_kata: jumlahKata,
-    jumlah_karakter: hasil.length
+    nomor_bab:
+      nomorBab,
+    judul_bab:
+      judulBab,
+    isi_bab:
+      hasil,
+    jumlah_kata:
+      jumlahKata,
+    jumlah_karakter:
+      hasil.length
   });
 }
 
-async function updateMemory(body, user, token) {
+/* =========================
+   UPDATE MEMORY
+========================= */
+
+async function updateMemory(
+  body,
+  user,
+  token,
+  env
+) {
   if (!body.novel_id) {
-    throw new Error("ID novel tidak ditemukan.");
+    throw new Error(
+      "ID novel tidak ditemukan."
+    );
   }
 
   const data = {
-    novel_id: body.novel_id,
-    user_id: user.id,
-    tipe: cleanText(body.tipe || "alur", 50),
-    judul: cleanText(body.judul, 200),
-    isi: cleanText(body.isi, 3000),
-    penting: body.penting !== false,
-    bab_terkait: body.bab_terkait || null,
-    updated_at: new Date().toISOString()
+    novel_id:
+      body.novel_id,
+
+    user_id:
+      user.id,
+
+    tipe:
+      cleanText(
+        body.tipe ||
+          "alur",
+        50
+      ),
+
+    judul:
+      cleanText(
+        body.judul,
+        200
+      ),
+
+    isi:
+      cleanText(
+        body.isi,
+        3000
+      ),
+
+    penting:
+      body.penting !== false,
+
+    bab_terkait:
+      body.bab_terkait ||
+      null,
+
+    updated_at:
+      new Date().toISOString()
   };
 
-  const res = await supabaseUserFetch(
-    "novel_memory",
-    token,
-    {
-      method: "POST",
-      headers: {
-        Prefer: "return=representation"
-      },
-      body: JSON.stringify(data)
-    }
-  );
+  const res =
+    await supabaseUserFetch(
+      "novel_memory",
+      token,
+      env,
+      {
+        method:
+          "POST",
+
+        headers: {
+          "Prefer":
+            "return=representation"
+        },
+
+        body:
+          JSON.stringify(
+            data
+          )
+      }
+    );
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gagal menyimpan memory: ${err}`);
+    const err =
+      await res.text();
+
+    throw new Error(
+      `Gagal menyimpan memory: ${err}`
+    );
   }
 
   return json({
-    success: true
+    success:
+      true
   });
 }
 
-async function handle(request) {
-  if (request.method === "OPTIONS") {
-  return new Response(null, {
-    status: 204,
-    headers: corsHeaders,
-  });
-}
+/* =========================
+   HANDLE REQUEST
+========================= */
 
-  if (request.method === "GET") {
+async function handle(
+  request,
+  env
+) {
+
+  /* CORS PREFLIGHT */
+  if (
+    request.method ===
+    "OPTIONS"
+  ) {
+    return new Response(
+      null,
+      {
+        status: 204,
+        headers:
+          corsHeaders
+      }
+    );
+  }
+
+  /* TEST BACKEND */
+  if (
+    request.method ===
+    "GET"
+  ) {
     return json({
-      success: true,
-      app: "PENA AI",
-      status: "Backend aktif"
+      success:
+        true,
+
+      app:
+        "PENA AI",
+
+      status:
+        "Backend aktif"
     });
   }
 
-  if (request.method !== "POST") {
-    return json({
-      success: false,
-      error: "Method tidak didukung."
-    }, 405);
+  /* ONLY POST */
+  if (
+    request.method !==
+    "POST"
+  ) {
+    return json(
+      {
+        success:
+          false,
+
+        error:
+          "Method tidak didukung."
+      },
+      405
+    );
   }
 
-  const auth = request.headers.get("Authorization");
+  /* AUTH */
+  const auth =
+    request.headers.get(
+      "Authorization"
+    );
 
-  if (!auth || !auth.startsWith("Bearer ")) {
-    return json({
-      success: false,
-      error: "Token login tidak ditemukan."
-    }, 401);
+  if (
+    !auth ||
+    !auth.startsWith(
+      "Bearer "
+    )
+  ) {
+    return json(
+      {
+        success:
+          false,
+
+        error:
+          "Token login tidak ditemukan."
+      },
+      401
+    );
   }
 
-  const token = auth.replace("Bearer ", "").trim();
+  const token =
+    auth
+      .replace(
+        "Bearer ",
+        ""
+      )
+      .trim();
 
-  const user = await getUser(token);
+  const user =
+    await getUser(
+      token,
+      env
+    );
 
   if (!user) {
-    return json({
-      success: false,
-      error: "Sesi login tidak valid."
-    }, 401);
+    return json(
+      {
+        success:
+          false,
+
+        error:
+          "Sesi login tidak valid."
+      },
+      401
+    );
   }
 
   let body;
 
   try {
-    body = await request.json();
-  } catch {
-    return json({
-      success: false,
-      error: "JSON request tidak valid."
-    }, 400);
+    body =
+      await request.json();
+  }
+
+  catch {
+    return json(
+      {
+        success:
+          false,
+
+        error:
+          "JSON request tidak valid."
+      },
+      400
+    );
   }
 
   try {
-    switch (body.action) {
+
+    switch (
+      body.action
+    ) {
+
       case "write":
-        return await tulisCepat(body, user, token);
+
+        return await tulisCepat(
+          body,
+          user,
+          token,
+          env
+        );
 
       case "create_novel":
+
       case "buat_novel":
-        return await buatNovel(body, user, token);
+
+        return await buatNovel(
+          body,
+          user,
+          token,
+          env
+        );
 
       case "write_chapter":
+
       case "tulis_bab":
-        return await tulisBab(body, user, token);
+
+        return await tulisBab(
+          body,
+          user,
+          token,
+          env
+        );
 
       case "update_memory":
-        return await updateMemory(body, user, token);
+
+        return await updateMemory(
+          body,
+          user,
+          token,
+          env
+        );
 
       default:
-        return json({
-          success: false,
-          error: `Action tidak dikenal: ${body.action}`
-        }, 400);
-    }
-  } catch (error) {
-    console.error(error);
 
-    return json({
-      success: false,
-      error: error.message || "Terjadi kesalahan pada server."
-    }, 500);
+        return json(
+          {
+            success:
+              false,
+
+            error:
+              `Action tidak dikenal: ${body.action}`
+          },
+          400
+        );
+    }
+
+  }
+
+  catch (error) {
+
+    console.error(
+      error
+    );
+
+    return json(
+      {
+        success:
+          false,
+
+        error:
+          error.message ||
+          "Terjadi kesalahan pada server."
+      },
+      500
+    );
   }
 }
 
-export default {
-  async fetch(request, env) {
-    globalThis.SUPABASE_URL = env.SUPABASE_URL;
-    globalThis.SUPABASE_ANON_KEY = env.SUPABASE_ANON_KEY;
-    globalThis.GROQ_API_KEY = env.GROQ_API_KEY;
+/* =========================
+   CLOUDFLARE WORKER
+========================= */
 
-    return handle(request);
+export default {
+
+  async fetch(
+    request,
+    env
+  ) {
+
+    return handle(
+      request,
+      env
+    );
   }
+
 };
