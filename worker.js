@@ -453,70 +453,21 @@ Mulai langsung dengan cerita.
 // =====================================================
 
 const NOVEL_CHAPTER_SYSTEM_PROMPT = `
-Kamu adalah penulis novel profesional berbahasa Indonesia sekaligus editor kontinuitas cerita.
-
-Kamu sedang menulis bab lanjutan dari sebuah novel yang sudah berjalan.
-
-Prioritas utama:
-1. Konsistensi cerita.
-2. Konsistensi karakter.
-3. Konsistensi hubungan.
-4. Konsistensi waktu dan tempat.
-5. Konsistensi fakta yang sudah terjadi.
-6. Perkembangan konflik yang masuk akal.
-7. Perkembangan emosi yang natural.
-8. Kualitas prosa.
-9. Dialog yang hidup.
-10. Hook atau konsekuensi yang membuat pembaca ingin melanjutkan.
-
-Jangan mengulang kejadian bab sebelumnya secara panjang.
-Jangan membuat karakter tiba-tiba berubah sifat tanpa alasan.
-Jangan menyelesaikan konflik utama terlalu cepat.
-Jangan membuat hubungan romantis berkembang secara tiba-tiba jika cerita sebelumnya belum membangunnya.
-Jangan memperkenalkan fakta besar yang bertentangan dengan informasi cerita sebelumnya.
-
-Genre harus terasa dalam adegan, konflik, atmosfer, dialog, dan perkembangan cerita.
-Nuansa harus terasa secara alami, bukan dengan menyebutkan nama nuansa tersebut.
-Gaya penulisan harus konsisten dengan gaya novel yang diberikan.
-
-Jangan menampilkan analisis, penjelasan, catatan untuk AI, atau proses berpikir.
-Jangan menggunakan Markdown, bullet point, numbering, atau heading.
-Jangan menulis "Bab" sebagai heading isi cerita.
-
-KELUARAN WAJIB menggunakan format berikut secara persis:
-
+Kamu adalah penulis novel profesional berbahasa Indonesia dan editor kontinuitas.
+Tulis bab lanjutan yang terasa seperti novel sungguhan, bukan sinopsis.
+Utamakan kesinambungan plot, karakter, hubungan, waktu, tempat, fakta kanon, sebab-akibat, emosi, dialog, dan kualitas prosa.
+Gunakan Story Bible sebagai acuan resmi. Jangan membocorkan rahasia yang belum waktunya diketahui. Jangan membuat tokoh mengetahui hal yang belum ia ketahui. Jangan mengubah fakta atau sifat tanpa alasan cerita.
+Jangan mengulang bab lama secara panjang, menyelesaikan konflik utama terlalu cepat, atau memperkenalkan tokoh/peristiwa besar tanpa alasan.
+Pertahankan genre, nuansa, dan gaya penulisan novel.
+Jangan tampilkan analisis, penjelasan, catatan AI, Markdown, outline, atau teks di luar format.
+Keluaran wajib persis:
 <JUDUL_BAB>
-Judul bab yang dibuat khusus untuk kejadian dan perkembangan bab ini.
+Judul orisinal 2–8 kata yang mencerminkan konflik, atmosfer, emosi, simbol, atau perkembangan bab; jangan generik atau meniru judul terkenal.
 </JUDUL_BAB>
-
 <ISI_BAB>
-Isi cerita novel.
+Prosa novel utuh dengan adegan, narasi, dialog, tindakan, dan perkembangan emosional.
 </ISI_BAB>
-
-Judul wajib dibuat otomatis berdasarkan genre, nuansa, gaya penulisan, konflik, perkembangan karakter, peristiwa penting, atmosfer, simbol, dan konsekuensi dari bab sebelumnya.
-
-Judul harus menarik, terasa sebagai bagian dari novel sungguhan, bukan ringkasan datar, dan tidak membocorkan kejutan besar.
-Utamakan judul 2 sampai 8 kata jika memungkinkan. Jangan meniru judul karya terkenal.
-Hindari judul generik seperti "Bab Baru", "Kelanjutan Cerita", "Awal Baru", "Konflik Baru", "Masalah Baru", atau "Kejadian Tak Terduga", kecuali benar-benar sangat relevan.
-Perhatikan judul bab sebelumnya dan hindari mengulang pola yang sama tanpa alasan.
-
-Sesuaikan rasa judul dan cerita dengan genre:
-- Misteri: teka-teki, petunjuk, rahasia, identitas, benda, tempat, atau kejadian mencurigakan.
-- Thriller: ancaman, tekanan waktu, pengejaran, keputusan, bahaya, atau konsekuensi.
-- Romansa: perasaan, jarak, pertemuan, pesan, pilihan, kerinduan, atau perubahan hubungan.
-- Drama: keluarga, keputusan, luka, pengorbanan, kehilangan, pertentangan, atau hubungan.
-- Horor: atmosfer, tempat, suara, benda, malam, atau sesuatu yang tidak seharusnya hadir.
-- Fantasi: dunia, artefak, kerajaan, kutukan, kekuatan, perjalanan, atau mitos.
-- Silat/wuxia: perguruan, jurus, pendekar, pedang, kitab, dendam, perseteruan, perjalanan, atau suasana dunia persilatan.
-- Genre campuran atau genre lain: sesuaikan secara alami dengan cerita.
-
-ISI_BAB harus berupa prosa novel utuh, bukan sinopsis, outline, atau rangkuman.
-
-Target isi bab adalah 1.800 sampai 2.500 kata. Usahakan sekitar 2.000 sampai 2.200 kata agar memiliki ruang untuk penutup yang utuh.
-Jangan mengakhiri cerita hanya karena sudah mencapai beberapa paragraf. Selesaikan adegan dan perkembangan emosional bab secara wajar, lalu tutup dengan konsekuensi, pertanyaan, atau hook yang kuat.
-Jangan mengorbankan kualitas dan kesinambungan cerita demi menambah jumlah kata.
-
-Jangan menambahkan teks apa pun di luar dua tag tersebut.
+Target isi 1.800–2.500 kata, ideal 2.000–2.200 kata. Akhiri adegan dan bab secara wajar dengan konsekuensi atau hook yang kuat. Hitung isi saja, bukan judul.
 `;
 
 
@@ -806,188 +757,195 @@ async function tulisBabBerikutnya(request, env, user, body) {
   }
 
   const storyBible = Array.isArray(storyBibleData) ? (storyBibleData[0] || null) : null;
+
+  // ---------------------------------------------------
+  // PENGAMAN UKURAN KONTEKS
+  // Batas TPM Groq saat ini 8.000 token/menit. Karena tidak
+  // tersedia tokenizer Groq di Worker, gunakan batas karakter
+  // konservatif dan potong konteks yang paling kurang penting.
+  // ---------------------------------------------------
+
+  const potongKonteks = (value, maxChars, dariAkhir = false) => {
+    const text = String(value || '').trim();
+    if (text.length <= maxChars) return text;
+    if (maxChars <= 24) return text.slice(0, maxChars);
+    const penanda = '\n[…konteks dipadatkan…]\n';
+    const sisa = Math.max(0, maxChars - penanda.length);
+    return dariAkhir
+      ? penanda + text.slice(-sisa)
+      : text.slice(0, sisa) + penanda;
+  };
+
+  // ===================================================
+  // STORY BIBLE — BATAS TOTAL, BUKAN 4.500 KARAKTER PER KOLOM
+  // ===================================================
+
   const storyBibleSections = [
-    ["DUNIA CERITA", "world_description"],
-    ["ATURAN DUNIA", "world_rules"],
-    ["LOKASI PENTING", "locations"],
-    ["KELOMPOK / ORGANISASI / PERGURUAN", "factions"],
-    ["HUBUNGAN ANTARTOKOH", "relationships"],
-    ["KRONOLOGI", "timeline"],
-    ["FAKTA KANON (TIDAK BOLEH BERUBAH)", "canon_facts"],
-    ["RAHASIA / MISTERI YANG BELUM TERUNGKAP", "secrets"],
-    ["CATATAN KONTINUITAS EDITOR", "continuity_notes"]
+    ['DUNIA CERITA', 'world_description', 180],
+    ['ATURAN DUNIA', 'world_rules', 230],
+    ['FAKTA KANON', 'canon_facts', 280],
+    ['CATATAN KONTINUITAS', 'continuity_notes', 250],
+    ['RAHASIA / MISTERI', 'secrets', 220],
+    ['HUBUNGAN ANTARTOKOH', 'relationships', 200],
+    ['KRONOLOGI', 'timeline', 170],
+    ['LOKASI PENTING', 'locations', 130],
+    ['KELOMPOK / ORGANISASI', 'factions', 130]
   ];
 
-  const konteksStoryBible = storyBible
-    ? storyBibleSections
-        .map(([label, key]) => {
-          const value = String(storyBible[key] || "").trim();
-          return value ? `${label}:\n${value.slice(0, 4500)}` : "";
-        })
-        .filter(Boolean)
-        .join("\n\n") || "Story Bible masih kosong."
-    : "Belum ada Story Bible yang disimpan untuk novel ini. Jangan mengarang fakta kanon baru yang bertentangan dengan bab sebelumnya.";
+  let sisaStoryBible = 1750;
+  const potonganStoryBible = [];
+
+  if (storyBible) {
+    for (const [label, key, batasKolom] of storyBibleSections) {
+      const value = String(storyBible[key] || '').trim();
+      if (!value || sisaStoryBible <= 35) continue;
+
+      const ruangNilai = Math.min(batasKolom, sisaStoryBible - label.length - 3);
+      if (ruangNilai <= 20) continue;
+
+      const ringkas = potongKonteks(value, ruangNilai);
+      potonganStoryBible.push(`${label}: ${ringkas}`);
+      sisaStoryBible -= label.length + ringkas.length + 3;
+    }
+  }
+
+  const konteksStoryBible = potonganStoryBible.length
+    ? potonganStoryBible.join('\n')
+    : 'Story Bible belum diisi. Jangan mengarang fakta yang bertentangan dengan bab sebelumnya.';
 
   // ===================================================
-  // BAB KONTEKS
+  // KARAKTER — PROFIL UTAMA DIRINGKAS
   // ===================================================
 
-  const babKonteks = babUntukKonteks.slice(-5);
-  let konteksBab = "Belum ada bab sebelumnya.";
+  const profilKarakter = karakter.slice(0, 8).map(k => {
+    const nama = potongKonteks(k.nama || 'Tanpa nama', 45);
+    const peran = potongKonteks(k.peran || '', 45);
+    const umur = potongKonteks(k.umur || '', 18);
+    const sifat = potongKonteks(k.sifat || '', 65);
+    const latar = potongKonteks(k.latar_belakang || '', 55);
+    const hubungan = potongKonteks(k.hubungan || '', 55);
+    const tujuan = potongKonteks(k.tujuan || '', 55);
+    const rahasia = potongKonteks(k.rahasia || '', 50);
+    const catatan = potongKonteks(k.catatan || '', 45);
+
+    return [
+      `${nama}${peran ? ` (${peran})` : ''}${umur ? `, usia ${umur}` : ''}`,
+      sifat ? `Sifat: ${sifat}` : '',
+      latar ? `Latar: ${latar}` : '',
+      hubungan ? `Hubungan: ${hubungan}` : '',
+      tujuan ? `Tujuan: ${tujuan}` : '',
+      rahasia ? `Rahasia: ${rahasia}` : '',
+      catatan ? `Catatan: ${catatan}` : ''
+    ].filter(Boolean).join(' | ');
+  });
+
+  const konteksKarakter = karakter.length
+    ? potongKonteks(profilKarakter.join('\n'), 1500)
+    : 'Belum ada profil karakter tersimpan.';
+
+  // ===================================================
+  // KONTEKS BAB — BAB TERAKHIR LEBIH DIUTAMAKAN
+  // ===================================================
+
+  const babKonteks = babUntukKonteks.slice(-3);
+  let konteksBab = 'Belum ada bab sebelumnya.';
 
   if (babKonteks.length) {
-    konteksBab = babKonteks.map(b => {
-      const isiSebelumnya = String(b.isi_bab || "");
-      // Ambil bagian akhir setiap bab supaya peristiwa terakhir,
-      // keputusan, atau cliffhanger tetap masuk ke konteks model.
-      const potonganIsi = isiSebelumnya.length > 12000
-        ? isiSebelumnya.slice(-12000)
-        : isiSebelumnya;
+    const potonganBab = babKonteks.map((b, index) => {
+      const isiSebelumnya = String(b.isi_bab || '').trim();
+      const babTerbaruDalamKonteks = index === babKonteks.length - 1;
+      const batasIsi = babTerbaruDalamKonteks ? 2350 : 300;
+      const isiRingkas = potongKonteks(isiSebelumnya, batasIsi, true);
+      return `BAB ${b.nomor_bab} — ${potongKonteks(b.judul_bab || '', 70)}\nCuplikan akhir: ${isiRingkas}`;
+    });
 
-      return `
-BAB ${b.nomor_bab}
-Judul: ${b.judul_bab || ""}
-Isi:
-${potonganIsi}
-`;
-    }).join("\n\n");
+    konteksBab = potongKonteks(potonganBab.join('\n\n'), 3000, true);
   }
 
   // ===================================================
-  // KONTEKS JUDUL BAB SEBELUMNYA
+  // RIWAYAT JUDUL — BATAS 350 KARAKTER
   // ===================================================
 
-  let konteksJudul = "Belum ada judul bab sebelumnya.";
-
-  if (babUntukKonteks.length) {
-    konteksJudul = babUntukKonteks
-      .slice(-12)
-      .map(b => `Bab ${b.nomor_bab} — ${b.judul_bab || ""}`)
-      .join("\n");
-  }
-
-  // ===================================================
-  // KONTEKS KARAKTER
-  // ===================================================
-
-  let konteksKarakter = "Belum ada data karakter.";
-
-  if (karakter.length) {
-    konteksKarakter = karakter.map(k => `
-Nama:
-${k.nama || ""}
-
-Umur:
-${k.umur || ""}
-
-Peran:
-${k.peran || ""}
-
-Sifat:
-${k.sifat || ""}
-
-Latar belakang:
-${k.latar_belakang || ""}
-
-Hubungan:
-${k.hubungan || ""}
-
-Tujuan:
-${k.tujuan || ""}
-
-Rahasia:
-${k.rahasia || ""}
-
-Catatan:
-${k.catatan || ""}
-`).join("\n\n");
-  }
+  const konteksJudul = babUntukKonteks.length
+    ? potongKonteks(
+        babUntukKonteks.slice(-8)
+          .map(b => `Bab ${b.nomor_bab}: ${b.judul_bab || ''}`)
+          .join(' | '),
+        350
+      )
+    : 'Belum ada judul bab sebelumnya.';
 
   // ===================================================
-  // PROMPT BAB
+  // INFORMASI NOVEL — BATAS 550 KARAKTER TOTAL
+  // ===================================================
+
+  let sisaInfoNovel = 550;
+  const ambilInfoNovel = (value, batas) => {
+    if (sisaInfoNovel <= 0) return '';
+    const ringkas = potongKonteks(value || '', Math.min(batas, sisaInfoNovel));
+    sisaInfoNovel -= ringkas.length;
+    return ringkas;
+  };
+
+  const infoJudul = ambilInfoNovel(novel.judul, 100);
+  const infoGenre = ambilInfoNovel(novel.genre || 'Drama', 60);
+  const infoGaya = ambilInfoNovel(novel.gaya || 'Natural', 80);
+  const infoNuansa = ambilInfoNovel(novel.nuansa || 'Emosional', 80);
+  const infoMode = ambilInfoNovel(novel.mode || 'Normal', 40);
+  const infoPremis = ambilInfoNovel(novel.premis || '', 190);
+
+  // ===================================================
+  // PROMPT BAB — RINGKAS, TETAP MENJAGA KONTINUITAS
   // ===================================================
 
   const userPrompt = `
-Kamu sedang melanjutkan sebuah novel yang sedang berjalan.
+LANJUTKAN NOVEL INI. Gunakan semua fakta penting di bawah sebagai kanon.
 
-INFORMASI NOVEL
+NOVEL: ${infoJudul}
+GENRE: ${infoGenre} | GAYA: ${infoGaya} | NUANSA: ${infoNuansa} | MODE: ${infoMode}
+PREMIS: ${infoPremis}
+NOMOR BAB BARU: ${nomorBabBaru}
 
-Judul novel:
-${novel.judul || ""}
-
-Genre:
-${novel.genre || "Drama"}
-
-Gaya penulisan:
-${novel.gaya || "Natural"}
-
-Nuansa:
-${novel.nuansa || "Emosional"}
-
-Mode:
-${novel.mode || "Normal"}
-
-Premis:
-${novel.premis || ""}
-
-BAB YANG AKAN DITULIS
-
-Nomor:
-${nomorBabBaru}
-
-POLA JUDUL BAB SEBELUMNYA
+POLA JUDUL SEBELUMNYA:
 ${konteksJudul}
 
-KARAKTER
+PROFIL KARAKTER (ringkas):
 ${konteksKarakter}
 
-STORY BIBLE — FAKTA RESMI DAN PANDUAN KONTINUITAS
+STORY BIBLE — FAKTA RESMI:
 ${konteksStoryBible}
 
-BAB-BAB TERAKHIR
+KONTEKS BAB SEBELUMNYA (cuplikan akhir; bab paling baru diutamakan):
 ${konteksBab}
 
-TUGAS UTAMA
+ATURAN PENULISAN:
+- Tulis kelanjutan langsung; jangan mengulang bab lama.
+- Patuhi Story Bible dan fakta bab sebelumnya. Jangan ubah usia, waktu, lokasi, hubungan, luka, benda, janji, atau fakta kanon.
+- Tokoh hanya boleh bertindak berdasarkan hal yang telah diketahuinya. Jangan membocorkan rahasia sebelum waktunya.
+- Pertahankan karakter, hubungan, genre, nuansa, dan gaya. Bangun konflik serta emosi secara bertahap dan masuk akal.
+- Gunakan adegan utuh, narasi, tindakan, dialog natural, dan detail suasana. Jangan membuat sinopsis atau outline.
+- Jangan menyelesaikan konflik utama terlalu cepat. Akhiri bab dengan penutup yang wajar dan hook/konsekuensi yang kuat.
+- Target isi 1.800–2.500 kata, ideal 2.000–2.200 kata. Jangan mengorbankan kualitas demi jumlah kata.
+- Buat judul baru 2–8 kata yang sesuai genre, konflik, emosi, atmosfer, simbol, dan perkembangan bab; hindari judul generik atau meniru judul terkenal.
 
-Tulis Bab ${nomorBabBaru} sebagai kelanjutan langsung dari cerita.
-Jangan mengulang bab sebelumnya.
-Pertahankan fakta cerita yang sudah ada.
-Jadikan Story Bible sebagai acuan kanon untuk dunia, aturan, lokasi, kelompok, hubungan, kronologi, fakta tetap, serta rahasia.
-Jangan membuat fakta baru yang bertentangan dengan Story Bible atau bab sebelumnya.
-Pastikan setiap tokoh hanya bertindak berdasarkan hal yang sudah ia ketahui.
-Pertahankan kepribadian dan hubungan karakter.
-Jika bab terakhir meninggalkan konflik, pertanyaan, rahasia, keputusan, ancaman, atau konsekuensi, biarkan hal tersebut memengaruhi bab baru.
-Bangun perkembangan cerita secara bertahap.
-Jangan menyelesaikan konflik utama terlalu cepat.
-Jangan memasukkan tokoh baru tanpa alasan cerita yang kuat.
-Jangan membuat perubahan hubungan secara tiba-tiba.
-Gunakan adegan konkret, dialog, tindakan, emosi, dan suasana.
-Genre harus terasa dari cara cerita berkembang, bukan hanya dari kata-kata yang digunakan.
-Nuansa harus terasa dari atmosfer dan emosi cerita.
-Gaya penulisan harus konsisten.
-
-Panjang isi bab WAJIB ditargetkan 1.800 sampai 2.500 kata. Usahakan sekitar 2.000 sampai 2.200 kata. Jumlah kata hanya dihitung dari isi di dalam tag ISI_BAB, bukan judul.
-
-ATURAN JUDUL
-
-Buat judul yang benar-benar cocok untuk bab ini. Judul harus mempertimbangkan genre, nuansa, gaya, konflik, perkembangan karakter, peristiwa penting, atmosfer, simbol atau objek penting, perubahan hubungan, dan konsekuensi dari bab sebelumnya.
-Judul tidak boleh hanya merangkum isi bab. Judul harus membuat pembaca penasaran tetapi tidak menjadi spoiler besar.
-Judul harus terasa sebagai bagian dari novel yang sama. Perhatikan pola judul bab sebelumnya, tetapi jangan menirunya secara mekanis.
-Hindari judul generik seperti "Bab Baru", "Kelanjutan Cerita", "Awal Baru", "Konflik Baru", "Masalah Baru", atau "Kejadian Tak Terduga", kecuali benar-benar relevan.
-Jangan meniru judul karya terkenal. Utamakan 2 sampai 8 kata.
-
-HASIL WAJIB DALAM FORMAT INI:
-
+KELUARAN WAJIB HANYA:
 <JUDUL_BAB>
-Tulis judul bab di sini.
+Judul bab
 </JUDUL_BAB>
-
 <ISI_BAB>
-Tulis isi cerita novel lengkap di sini.
+Isi novel lengkap
 </ISI_BAB>
-
-Jangan menambahkan apa pun di luar dua tag tersebut.
 `;
+
+  // Estimasi konservatif untuk mencegah prompt kembali melampaui TPM.
+  // Batas 11.500 karakter untuk instruksi + konteks (sekitar 3.600–3.900 token,
+  // bergantung tokenizer). Sisa TPM disediakan untuk keluaran bab.
+  const ukuranPromptKarakter = NOVEL_CHAPTER_SYSTEM_PROMPT.length + userPrompt.length;
+  if (ukuranPromptKarakter > 11500) {
+    throw new Error(
+      `Konteks novel masih terlalu panjang (${ukuranPromptKarakter} karakter). Bab belum dikirim ke Groq dan tidak disimpan. Ringkas Story Bible atau profil karakter, lalu coba kembali.`
+    );
+  }
 
   // ===================================================
   // PANGGIL GROQ - SATU KALI SAJA
@@ -997,7 +955,7 @@ Jangan menambahkan apa pun di luar dua tag tersebut.
     NOVEL_CHAPTER_SYSTEM_PROMPT,
     userPrompt,
     env,
-    12000
+    4200
   );
 
   // ===================================================
