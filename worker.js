@@ -51,10 +51,6 @@ function bersihkanHasilAI(text) {
 
   let hasil = String(text).trim();
 
-  // ---------------------------------------------------
-  // CARI INSTRUKSI META YANG SERING DITULIS AI
-  // ---------------------------------------------------
-
   const polaInstruksi = [
     /We need to output/i,
     /We need to write/i,
@@ -94,11 +90,6 @@ function bersihkanHasilAI(text) {
   }
 
 
-  // ---------------------------------------------------
-  // KALAU ADA INSTRUKSI META,
-  // CARI AWAL CERITA
-  // ---------------------------------------------------
-
   if (posisiInstruksi >= 0) {
 
     const bagian =
@@ -118,9 +109,6 @@ function bersihkanHasilAI(text) {
         );
 
     } else {
-
-      // Kalau awal cerita tidak ditemukan,
-      // buang baris-baris instruksi Inggris.
 
       hasil =
         bagian
@@ -145,10 +133,6 @@ function bersihkanHasilAI(text) {
   }
 
 
-  // ---------------------------------------------------
-  // HAPUS SISA KALIMAT META
-  // ---------------------------------------------------
-
   hasil = hasil
     .replace(
       /^.*?Let's write\.\s*/is,
@@ -172,20 +156,12 @@ function bersihkanHasilAI(text) {
     );
 
 
-  // ---------------------------------------------------
-  // HAPUS MARKDOWN HEADING
-  // ---------------------------------------------------
-
   hasil =
     hasil.replace(
       /^#{1,6}\s+.*$/gm,
       ""
     );
 
-
-  // ---------------------------------------------------
-  // HAPUS BULLET
-  // ---------------------------------------------------
 
   hasil =
     hasil.replace(
@@ -194,20 +170,12 @@ function bersihkanHasilAI(text) {
     );
 
 
-  // ---------------------------------------------------
-  // HAPUS NUMBERING
-  // ---------------------------------------------------
-
   hasil =
     hasil.replace(
       /^\s*\d+[.)]\s+/gm,
       ""
     );
 
-
-  // ---------------------------------------------------
-  // HAPUS GARIS PEMISAH MARKDOWN
-  // ---------------------------------------------------
 
   hasil =
     hasil.replace(
@@ -216,10 +184,6 @@ function bersihkanHasilAI(text) {
     );
 
 
-  // ---------------------------------------------------
-  // HAPUS PEMBUKA META BAHASA INDONESIA
-  // ---------------------------------------------------
-
   hasil =
     hasil.replace(
       /^(?:Berikut adalah|Berikut cerita|Berikut kisah|Berikut novel|Ini adalah cerita).*?:?\s*/i,
@@ -227,20 +191,12 @@ function bersihkanHasilAI(text) {
     );
 
 
-  // ---------------------------------------------------
-  // HAPUS HEADING "BAB"
-  // ---------------------------------------------------
-
   hasil =
     hasil.replace(
       /^\s*Bab\s+\d+.*$/gim,
       ""
     );
 
-
-  // ---------------------------------------------------
-  // RAPikan BARIS KOSONG
-  // ---------------------------------------------------
 
   hasil =
     hasil
@@ -259,9 +215,7 @@ function bersihkanHasilAI(text) {
 async function getUser(request, env) {
 
   const authorization =
-    request.headers.get(
-      "Authorization"
-    );
+    request.headers.get("Authorization");
 
   if (!authorization) {
     return null;
@@ -357,10 +311,6 @@ async function callGroq(
   let hasil = "";
 
 
-  // -----------------------------------------------
-  // FORMAT OUTPUT_TEXT
-  // -----------------------------------------------
-
   if (
     typeof data.output_text === "string"
   ) {
@@ -370,10 +320,6 @@ async function callGroq(
 
   }
 
-
-  // -----------------------------------------------
-  // FORMAT OUTPUT ARRAY
-  // -----------------------------------------------
 
   if (
     !hasil &&
@@ -486,38 +432,6 @@ Jangan membuat heading.
 
 Jangan memulai dengan kata "Bab".
 
-Jangan menggunakan kalimat:
-
-"We need to write"
-
-"We need to output"
-
-"We need to create"
-
-"Let's write"
-
-"Let's produce"
-
-"Let's craft"
-
-"Let's create"
-
-"Here is the story"
-
-"Below is the story"
-
-"Must develop the idea"
-
-"Make sure no bullet points"
-
-"Provide a flowing prose"
-
-"End with a hook"
-
-"Just continuous story paragraphs"
-
-Kalimat-kalimat tersebut adalah instruksi internal dan TIDAK BOLEH muncul dalam hasil akhir.
-
 Hasil akhir hanya boleh berupa cerita novel berbahasa Indonesia.
 
 Jangan menulis instruksi sebelum cerita.
@@ -539,20 +453,16 @@ async function tulisCepat(
   body
 ) {
 
-  // PENTING:
-  // body TIDAK dipanggil request.json() lagi.
-  // Body sudah dibaca satu kali oleh fetch() utama.
-
   const judul =
     String(
-      body.judul ||
+      body?.judul ||
       "Tulisan Baru"
     ).trim();
 
 
   const prompt =
     String(
-      body.prompt ||
+      body?.prompt ||
       ""
     ).trim();
 
@@ -570,10 +480,6 @@ async function tulisCepat(
 
   }
 
-
-  // ---------------------------------------------------
-  // USER PROMPT BERSIH
-  // ---------------------------------------------------
 
   const userPrompt = `
 Tulis cerita novel berdasarkan ide berikut.
@@ -606,10 +512,6 @@ OUTPUT HANYA CERITA.
 `;
 
 
-  // ---------------------------------------------------
-  // PANGGIL GROQ
-  // ---------------------------------------------------
-
   const hasilMentah =
     await callGroq(
       NOVEL_SYSTEM_PROMPT,
@@ -618,10 +520,6 @@ OUTPUT HANYA CERITA.
       4000
     );
 
-
-  // ---------------------------------------------------
-  // BERSIHKAN OUTPUT
-  // ---------------------------------------------------
 
   const hasilTulisan =
     bersihkanHasilAI(
@@ -637,10 +535,6 @@ OUTPUT HANYA CERITA.
 
   }
 
-
-  // ---------------------------------------------------
-  // SIMPAN KE SUPABASE
-  // ---------------------------------------------------
 
   try {
 
@@ -703,10 +597,6 @@ OUTPUT HANYA CERITA.
   }
 
 
-  // ---------------------------------------------------
-  // KIRIM KE FRONTEND
-  // ---------------------------------------------------
-
   return json({
 
     success:
@@ -716,6 +606,553 @@ OUTPUT HANYA CERITA.
       judul,
 
     hasil_tulisan:
+      hasilTulisan,
+
+    text:
+      hasilTulisan,
+
+    content:
+      hasilTulisan,
+
+    jumlah_kata:
+      hitungKata(
+        hasilTulisan
+      )
+
+  });
+}
+
+
+// =====================================================
+// TULIS BAB BERIKUTNYA
+// =====================================================
+
+async function tulisBabBerikutnya(
+  request,
+  env,
+  user,
+  body
+) {
+
+  const novelId =
+    Number(body?.novel_id);
+
+
+  if (!novelId) {
+
+    return json(
+      {
+        success: false,
+        error:
+          "ID novel tidak ditemukan."
+      },
+      400
+    );
+
+  }
+
+
+  const authorization =
+    request.headers.get(
+      "Authorization"
+    );
+
+
+  const supabaseHeaders = {
+
+    "apikey":
+      env.SUPABASE_ANON_KEY,
+
+    "Authorization":
+      authorization,
+
+    "Content-Type":
+      "application/json"
+
+  };
+
+
+  // ===================================================
+  // AMBIL DATA NOVEL
+  // ===================================================
+
+  const novelResponse =
+    await fetch(
+      `${env.SUPABASE_URL}/rest/v1/novel?id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*`,
+      {
+        method: "GET",
+        headers: supabaseHeaders
+      }
+    );
+
+
+  const novelData =
+    await novelResponse.json();
+
+
+  if (!novelResponse.ok) {
+
+    throw new Error(
+      novelData?.message ||
+      novelData?.hint ||
+      "Gagal mengambil data novel."
+    );
+
+  }
+
+
+  if (
+    !Array.isArray(novelData) ||
+    !novelData.length
+  ) {
+
+    return json(
+      {
+        success: false,
+        error:
+          "Novel tidak ditemukan atau bukan milik akun ini."
+      },
+      404
+    );
+
+  }
+
+
+  const novel =
+    novelData[0];
+
+
+  // ===================================================
+  // AMBIL BAB-BAB SEBELUMNYA
+  // ===================================================
+
+  const babResponse =
+    await fetch(
+      `${env.SUPABASE_URL}/rest/v1/novel_bab?novel_id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*&order=nomor_bab.asc`,
+      {
+        method: "GET",
+        headers: supabaseHeaders
+      }
+    );
+
+
+  const babData =
+    await babResponse.json();
+
+
+  if (!babResponse.ok) {
+
+    throw new Error(
+      babData?.message ||
+      babData?.hint ||
+      "Gagal mengambil bab novel."
+    );
+
+  }
+
+
+  const semuaBab =
+    Array.isArray(babData)
+      ? babData
+      : [];
+
+
+  const nomorBabBaru =
+    semuaBab.length
+      ? Math.max(
+          ...semuaBab.map(
+            b => Number(b.nomor_bab) || 0
+          )
+        ) + 1
+      : 1;
+
+
+  // ===================================================
+  // AMBIL KARAKTER
+  // ===================================================
+
+  const karakterResponse =
+    await fetch(
+      `${env.SUPABASE_URL}/rest/v1/novel_karakter?novel_id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*`,
+      {
+        method: "GET",
+        headers: supabaseHeaders
+      }
+    );
+
+
+  const karakterData =
+    await karakterResponse.json();
+
+
+  const karakter =
+    karakterResponse.ok &&
+    Array.isArray(karakterData)
+      ? karakterData
+      : [];
+
+
+  // ===================================================
+  // KONTEKS CERITA
+  // ===================================================
+
+  const babTerakhir =
+    semuaBab.length
+      ? semuaBab[semuaBab.length - 1]
+      : null;
+
+
+  // Jangan mengirim seluruh novel jika sudah sangat panjang.
+  // Ambil beberapa bab terakhir sebagai konteks utama.
+
+  const babKonteks =
+    semuaBab.slice(-5);
+
+
+  let konteksBab =
+    "Belum ada bab sebelumnya.";
+
+  if (babKonteks.length) {
+
+    konteksBab =
+      babKonteks
+        .map(b => {
+
+          return `
+BAB ${b.nomor_bab}
+Judul: ${b.judul_bab || ""}
+Isi:
+${String(b.isi_bab || "").slice(0, 12000)}
+`;
+
+        })
+        .join("\n\n");
+
+  }
+
+
+  let konteksKarakter =
+    "Belum ada data karakter.";
+
+  if (karakter.length) {
+
+    konteksKarakter =
+      karakter
+        .map(k => {
+
+          return `
+Nama: ${k.nama || ""}
+Umur: ${k.umur || ""}
+Peran: ${k.peran || ""}
+Sifat: ${k.sifat || ""}
+Latar belakang: ${k.latar_belakang || ""}
+Hubungan: ${k.hubungan || ""}
+Tujuan: ${k.tujuan || ""}
+Rahasia: ${k.rahasia || ""}
+`;
+
+        })
+        .join("\n\n");
+
+  }
+
+
+  // ===================================================
+  // PROMPT BAB BERIKUTNYA
+  // ===================================================
+
+  const userPrompt = `
+Kamu sedang melanjutkan sebuah novel.
+
+JUDUL NOVEL:
+${novel.judul || ""}
+
+GENRE:
+${novel.genre || "Drama"}
+
+GAYA:
+${novel.gaya || "Natural"}
+
+NUANSA:
+${novel.nuansa || "Emosional"}
+
+MODE:
+${novel.mode || "Normal"}
+
+PREMIS:
+${novel.premis || ""}
+
+BAB YANG AKAN DITULIS:
+${nomorBabBaru}
+
+DATA KARAKTER:
+${konteksKarakter}
+
+BAB-BAB TERAKHIR:
+${konteksBab}
+
+TUGAS:
+
+Tulis Bab ${nomorBabBaru} yang benar-benar melanjutkan kejadian sebelumnya.
+
+Jangan mengulang bab sebelumnya.
+
+Jangan membuat alur baru yang tidak berhubungan.
+
+Pertahankan karakter, hubungan, konflik, tempat, waktu, dan fakta cerita yang sudah ada.
+
+Kembangkan kejadian baru secara natural.
+
+Jika bab sebelumnya berakhir dengan konflik atau pertanyaan, lanjutkan konsekuensinya.
+
+Bangun adegan, dialog, emosi, ketegangan, dan perkembangan hubungan.
+
+Jangan membuat ringkasan.
+
+Jangan menjelaskan apa yang kamu lakukan.
+
+Jangan menulis judul bab.
+
+Jangan menulis "Bab ${nomorBabBaru}" sebagai heading.
+
+OUTPUT HANYA ISI CERITA.
+
+Tulis sekitar 1800 sampai 2200 kata jika memungkinkan.
+`;
+
+
+  // ===================================================
+  // PANGGIL AI
+  // ===================================================
+
+  const hasilMentah =
+    await callGroq(
+      NOVEL_SYSTEM_PROMPT,
+      userPrompt,
+      env,
+      6500
+    );
+
+
+  const hasilTulisan =
+    bersihkanHasilAI(
+      hasilMentah
+    );
+
+
+  if (!hasilTulisan) {
+
+    throw new Error(
+      "AI tidak menghasilkan isi bab."
+    );
+
+  }
+
+
+  // ===================================================
+  // JUDUL BAB
+  // ===================================================
+
+  let judulBab =
+    `Bab ${nomorBabBaru}`;
+
+
+  if (babTerakhir?.judul_bab) {
+
+    judulBab =
+      `Bab ${nomorBabBaru}`;
+
+  }
+
+
+  // ===================================================
+  // SIMPAN BAB
+  // ===================================================
+
+  const insertResponse =
+    await fetch(
+      `${env.SUPABASE_URL}/rest/v1/novel_bab`,
+      {
+        method: "POST",
+
+        headers: {
+          ...supabaseHeaders,
+          "Prefer":
+            "return=representation"
+        },
+
+        body:
+          JSON.stringify({
+
+            novel_id:
+              novelId,
+
+            user_id:
+              user.id,
+
+            nomor_bab:
+              nomorBabBaru,
+
+            judul_bab:
+              judulBab,
+
+            isi_bab:
+              hasilTulisan,
+
+            ringkasan:
+              "",
+
+            jumlah_karakter:
+              hitungKata(
+                hasilTulisan
+              ),
+
+            status:
+              "selesai"
+
+          })
+
+      }
+    );
+
+
+  const insertData =
+    await insertResponse.json();
+
+
+  if (!insertResponse.ok) {
+
+    throw new Error(
+      insertData?.message ||
+      insertData?.hint ||
+      insertData?.details ||
+      "Bab gagal disimpan ke database."
+    );
+
+  }
+
+
+  // ===================================================
+  // UPDATE JUMLAH BAB
+  // ===================================================
+
+  const updateNovelResponse =
+    await fetch(
+      `${env.SUPABASE_URL}/rest/v1/novel?id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}`,
+      {
+        method: "PATCH",
+
+        headers: {
+          ...supabaseHeaders,
+          "Prefer":
+            "return=minimal"
+        },
+
+        body:
+          JSON.stringify({
+
+            bab_selesai:
+              nomorBabBaru,
+
+            updated_at:
+              new Date().toISOString()
+
+          })
+
+      }
+    );
+
+
+  if (!updateNovelResponse.ok) {
+
+    const updateError =
+      await updateNovelResponse.text();
+
+    console.log(
+      "Gagal update jumlah bab:",
+      updateError
+    );
+
+  }
+
+
+  // ===================================================
+  // SIMPAN RIWAYAT AI
+  // ===================================================
+
+  try {
+
+    await fetch(
+      `${env.SUPABASE_URL}/rest/v1/riwayat_penulisan`,
+      {
+        method: "POST",
+
+        headers: {
+          ...supabaseHeaders,
+          "Prefer":
+            "return=minimal"
+        },
+
+        body:
+          JSON.stringify({
+
+            user_id:
+              user.id,
+
+            judul:
+              `${novel.judul || "Novel"} - Bab ${nomorBabBaru}`,
+
+            jenis:
+              "Novel",
+
+            prompt:
+              userPrompt,
+
+            hasil_tulisan:
+              hasilTulisan,
+
+            jumlah_kata:
+              hitungKata(
+                hasilTulisan
+              )
+
+          })
+
+      }
+    );
+
+  } catch (error) {
+
+    console.log(
+      "Gagal menyimpan riwayat bab:",
+      error.message
+    );
+
+  }
+
+
+  // ===================================================
+  // RESPONSE
+  // ===================================================
+
+  return json({
+
+    success:
+      true,
+
+    message:
+      `Bab ${nomorBabBaru} berhasil ditulis dan disimpan.`,
+
+    novel_id:
+      novelId,
+
+    nomor_bab:
+      nomorBabBaru,
+
+    judul_bab:
+      judulBab,
+
+    isi_bab:
       hasilTulisan,
 
     text:
@@ -937,7 +1374,7 @@ export default {
 
 
     const action =
-      body.action;
+      body?.action;
 
 
     // -------------------------------------------------
@@ -951,6 +1388,16 @@ export default {
         case "write":
 
           return await tulisCepat(
+            request,
+            env,
+            user,
+            body
+          );
+
+
+        case "write_chapter":
+
+          return await tulisBabBerikutnya(
             request,
             env,
             user,
