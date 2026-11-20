@@ -1383,52 +1383,50 @@ export default {
 
     try {
 
-      switch (action) {
+switch (action) {
 
-        case "write":
+  case "write":
 
-          return await tulisCepat(
-            request,
-            env,
-            user,
-            body
-          );
-
-
-        case "write_chapter":
-
-          return await tulisBabBerikutnya(
-            request,
-            env,
-            user,
-            body
-          );
+    return await tulisCepat(
+      request,
+      env,
+      user,
+      body
+    );
 
 
-        case "history":
+  case "write_chapter":
 
-          return await ambilRiwayat(
-            request,
-            env,
-            user
-          );
+    return await tulisBabBerikutnya(
+      request,
+      env,
+      user,
+      body
+    );
 
 
-        default:
+  case "history":
 
-          return json(
-            {
-              success:
-                false,
+    return await ambilRiwayat(
+      request,
+      env,
+      user
+    );
 
-              error:
-                "Action tidak dikenal: " +
-                action
-            },
-            400
-          );
 
-      }
+  default:
+
+    return json(
+      {
+        success: false,
+        error:
+          "Action tidak dikenal: " +
+          action
+      },
+      400
+    );
+
+}
 
     } catch (error) {
 
