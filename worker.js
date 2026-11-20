@@ -1,7 +1,7 @@
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+  "Access-Control-Allow-Origin": "https://pena-ai-engine.pages.dev",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 const SUPABASE_URL = env("SUPABASE_URL");
@@ -577,11 +577,11 @@ async function updateMemory(body, user, token) {
 
 async function handle(request) {
   if (request.method === "OPTIONS") {
-    return new Response("", {
-      status: 204,
-      headers: corsHeaders
-    });
-  }
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
+}
 
   if (request.method === "GET") {
     return json({
