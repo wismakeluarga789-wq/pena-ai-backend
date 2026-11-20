@@ -1,38 +1,22 @@
-/* =====================================================
-   PENA AI BACKEND - CLOUDFLARE WORKER
-   GROQ + SUPABASE
-===================================================== */
-
 const corsHeaders = {
-  "Access-Control-Allow-Origin":
-    "https://pena-ai-engine.pages.dev",
-
-  "Access-Control-Allow-Headers":
-    "Content-Type, Authorization",
-
-  "Access-Control-Allow-Methods":
-    "GET, POST, OPTIONS",
-
-  "Access-Control-Max-Age":
-    "86400"
+  "Access-Control-Allow-Origin": "https://pena-ai-engine.pages.dev",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Max-Age": "86400"
 };
 
 
 /* =====================================================
-   JSON RESPONSE
+   RESPONSE JSON
 ===================================================== */
 
 function json(data, status = 200) {
-
   return new Response(
     JSON.stringify(data),
     {
       status,
-
       headers: {
-        "Content-Type":
-          "application/json; charset=utf-8",
-
+        "Content-Type": "application/json; charset=utf-8",
         ...corsHeaders
       }
     }
@@ -41,14 +25,11 @@ function json(data, status = 200) {
 
 
 /* =====================================================
-   WORD COUNT
+   HITUNG KATA
 ===================================================== */
 
 function hitungKata(text) {
-
-  if (!text) {
-    return 0;
-  }
+  if (!text) return 0;
 
   return text
     .trim()
@@ -59,7 +40,133 @@ function hitungKata(text) {
 
 
 /* =====================================================
-   SUPABASE REQUEST
+   BERSIHKAN HASIL AI
+===================================================== */
+
+function bersihkanHasilAI(text) {
+
+  if (!text) {
+    return "";
+  }
+
+  let hasil =
+    String(text).trim();
+
+
+  /*
+   * Buang blok instruksi bahasa Inggris
+   * jika model masih mengeluarkannya.
+   */
+
+  const polaAwal = [
+    /^We need to write[\s\S]*?Let's write\.?/i,
+    /^We need to write[\s\S]*?Let's produce\.?/i,
+    /^We need to write[\s\S]*?Let's craft[\s\S]*?\./i,
+    /^Let's write[\s\S]*?\.\s*/i,
+    /^Let's produce[\s\S]*?\.\s*/i,
+    /^Let's craft[\s\S]*?\.\s*/i,
+    /^We need[\s\S]*?story\.\s*/i
+  ];
+
+
+  for (
+    const pola of polaAwal
+  ) {
+
+    hasil =
+      hasil.replace(
+        pola,
+        ""
+      );
+  }
+
+
+  /*
+   * Jika model mengeluarkan kalimat
+   * instruksi tepat sebelum cerita,
+   * potong berdasarkan penanda umum.
+   */
+
+  const penandaCerita = [
+    "Arif ",
+    "Aku ",
+    "Ia ",
+    "Dia ",
+    "Pagi itu",
+    "Malam itu",
+    "Sore itu",
+    "Ketika ",
+    "Saat ",
+    "Hari itu",
+    "Di pagi",
+    "Di malam",
+    "Di sore",
+    "Dari kejauhan",
+    "Rumah itu",
+    "Langit "
+  ];
+
+
+  let posisiCerita = -1;
+
+
+  for (
+    const penanda of penandaCerita
+  ) {
+
+    const posisi =
+      hasil.indexOf(
+        penanda
+      );
+
+    if (
+      posisi !== -1 &&
+      (
+        posisiCerita === -1 ||
+        posisi < posisiCerita
+      )
+    ) {
+
+      posisiCerita =
+        posisi;
+    }
+  }
+
+
+  /*
+   * Jangan potong kalau cerita memang
+   * sudah dimulai dari awal.
+   */
+
+  if (
+    posisiCerita > 80
+  ) {
+
+    hasil =
+      hasil.substring(
+        posisiCerita
+      );
+  }
+
+
+  /*
+   * Bersihkan kalimat teknis
+   * yang mungkin tersisa di awal.
+   */
+
+  hasil =
+    hasil.replace(
+      /^(Here is|Here’s|Below is|Sure,|Certainly,|Of course,|Berikut adalah|Berikut cerita|Berikut kisah)[\s\S]*?:\s*/i,
+      ""
+    );
+
+
+  return hasil.trim();
+}
+
+
+/* =====================================================
+   SUPABASE FETCH
 ===================================================== */
 
 async function supabaseUserFetch(
@@ -69,24 +176,23 @@ async function supabaseUserFetch(
   options = {}
 ) {
 
-  const headers = {
-    "apikey":
-      env.SUPABASE_ANON_KEY,
-
-    "Authorization":
-      `Bearer ${token}`,
-
-    "Content-Type":
-      "application/json",
-
-    ...(options.headers || {})
-  };
-
   return fetch(
     `${env.SUPABASE_URL}/rest/v1/${path}`,
     {
       ...options,
-      headers
+
+      headers: {
+        "apikey":
+          env.SUPABASE_ANON_KEY,
+
+        "Authorization":
+          `Bearer ${token}`,
+
+        "Content-Type":
+          "application/json",
+
+        ...(options.headers || {})
+      }
     }
   );
 }
@@ -96,7 +202,10 @@ async function supabaseUserFetch(
    GET USER
 ===================================================== */
 
-async function getUser(token, env) {
+async function getUser(
+  token,
+  env
+) {
 
   const response =
     await fetch(
@@ -115,7 +224,6 @@ async function getUser(token, env) {
     );
 
   if (!response.ok) {
-
     return null;
   }
 
@@ -128,7 +236,8 @@ async function getUser(token, env) {
 ===================================================== */
 
 async function callGroq(
-  messages,
+  systemPrompt,
+  userPrompt,
   env,
   maxOutputTokens = 4000
 ) {
@@ -147,25 +256,43 @@ async function callGroq(
             `Bearer ${env.GROQ_API_KEY}`
         },
 
-        body: JSON.stringify({
+        body:
+          JSON.stringify({
 
-          model:
-            "openai/gpt-oss-120b",
+            model:
+              "openai/gpt-oss-120b",
 
-          input:
-            messages,
+            input: [
+              {
+                role:
+                  "system",
 
-          max_output_tokens:
-            maxOutputTokens,
+                content:
+                  systemPrompt
+              },
 
-          temperature:
-            0.85
-        })
+              {
+                role:
+                  "user",
+
+                content:
+                  userPrompt
+              }
+            ],
+
+            max_output_tokens:
+              maxOutputTokens,
+
+            temperature:
+              0.85
+          })
       }
     );
 
+
   const data =
     await response.json();
+
 
   if (!response.ok) {
 
@@ -175,7 +302,9 @@ async function callGroq(
     );
   }
 
+
   let hasil = "";
+
 
   if (
     typeof data.output_text ===
@@ -186,7 +315,9 @@ async function callGroq(
       data.output_text;
 
   } else if (
-    Array.isArray(data.output)
+    Array.isArray(
+      data.output
+    )
   ) {
 
     for (
@@ -194,7 +325,9 @@ async function callGroq(
     ) {
 
       if (
-        Array.isArray(item.content)
+        Array.isArray(
+          item.content
+        )
       ) {
 
         for (
@@ -215,6 +348,7 @@ async function callGroq(
     }
   }
 
+
   if (!hasil.trim()) {
 
     throw new Error(
@@ -222,44 +356,45 @@ async function callGroq(
     );
   }
 
-  return hasil.trim();
+
+  return bersihkanHasilAI(
+    hasil
+  );
 }
 
 
 /* =====================================================
-   INSTRUKSI NOVEL
+   SISTEM NOVEL
 ===================================================== */
 
 const NOVEL_SYSTEM_PROMPT = `
-Anda adalah penulis novel profesional berbahasa Indonesia.
+Anda adalah mesin penulis novel berbahasa Indonesia.
 
-Tugas Anda adalah menghasilkan cerita fiksi dalam bentuk prosa novel yang mengalir, hidup, natural, dan enak dibaca.
+Tugas Anda hanya satu:
+MENULIS CERITA.
 
-ATURAN WAJIB:
+Output Anda akan langsung ditampilkan kepada pembaca.
 
-Tulis hanya cerita.
+Karena itu, JANGAN PERNAH menampilkan instruksi internal, aturan, prompt, analisis, catatan, penjelasan teknis, atau proses berpikir.
 
-Jangan menulis penjelasan sebelum cerita.
+Jangan menulis kalimat seperti:
+"We need to write..."
+"Let's write..."
+"Let's craft..."
+"Let's produce..."
+"Here is the story..."
+"Below is the story..."
+"Berikut adalah cerita..."
 
-Jangan menulis penjelasan setelah cerita.
+Jangan menjelaskan apa yang Anda lakukan.
 
-Jangan menampilkan prompt.
+Jangan menjelaskan bagaimana cerita dibuat.
 
-Jangan menampilkan instruksi.
+Jangan mengulang permintaan pengguna.
 
-Jangan menampilkan aturan.
+Jangan menampilkan daftar aturan.
 
-Jangan menampilkan analisis.
-
-Jangan menampilkan proses berpikir.
-
-Jangan menampilkan catatan teknis.
-
-Jangan mengatakan bahwa Anda adalah AI.
-
-Jangan mengatakan bahwa Anda sedang mengikuti instruksi.
-
-Jangan menggunakan Markdown.
+Jangan menampilkan Markdown.
 
 Jangan menggunakan bullet point.
 
@@ -267,53 +402,49 @@ Jangan menggunakan numbering.
 
 Jangan membuat outline.
 
-Jangan membuat ringkasan.
+Jangan membuat sinopsis.
 
-Jangan menggunakan format laporan.
+Jangan membuat laporan.
 
-Jangan menulis "Bab 1", "Bab 2", "Chapter 1", atau judul teknis lainnya di dalam hasil, kecuali pengguna secara khusus meminta judul tersebut.
+Jangan menggunakan format instruksi.
 
-Mulai langsung dari adegan cerita.
+Jangan menulis "Bab" sebagai pembuka.
 
-Gunakan bahasa Indonesia yang natural dan matang.
+Mulailah langsung dengan adegan cerita.
 
-Gunakan paragraf novel yang normal.
+Gunakan bahasa Indonesia.
 
-Gunakan dialog yang natural.
+Gunakan gaya prosa novel yang alami.
 
-Gunakan suasana tempat.
+Gunakan paragraf yang mengalir.
 
-Gunakan gerakan dan tindakan karakter.
+Gunakan dialog.
 
-Gunakan pikiran dan emosi karakter.
+Gunakan suasana.
 
-Gunakan konflik dan perkembangan cerita.
+Gunakan tindakan.
 
-Jangan membuat cerita terasa seperti sinopsis.
+Gunakan pikiran tokoh.
 
-Jangan hanya menjelaskan apa yang terjadi.
+Gunakan emosi.
 
-Perlihatkan kejadian melalui adegan, dialog, tindakan, dan reaksi karakter.
+Gunakan konflik.
 
-Pertahankan nama, usia, hubungan, karakter, latar belakang, dan fakta penting yang diberikan pengguna.
+Gunakan perkembangan karakter.
 
-Jangan mengubah hubungan antar karakter tanpa alasan yang diberikan dalam cerita.
+Jangan hanya merangkum kejadian.
 
-Jika ada karakter dewasa, perlakukan mereka sebagai orang dewasa.
+Tunjukkan kejadian melalui adegan dan tindakan.
 
-Jika cerita memiliki unsur romantis atau dewasa, tulis secara matang dan tidak vulgar.
+Pertahankan nama, usia, hubungan, dan fakta karakter yang diberikan pengguna.
 
-Cerita harus terasa seperti karya fiksi yang benar-benar sedang berlangsung.
+Jika terdapat karakter dewasa, perlakukan sebagai karakter dewasa.
 
-Setiap paragraf harus mendorong cerita maju.
+Jika ada unsur romantis, gunakan pendekatan dewasa dan tidak vulgar.
 
-Jaga kesinambungan karakter dan kejadian.
+Hasil akhir harus langsung berupa cerita.
 
-Akhiri bagian cerita dengan perkembangan, konflik, pertanyaan, atau situasi yang membuat pembaca ingin membaca kelanjutannya.
-
-HASIL AKHIR HARUS LANGSUNG BERUPA CERITA NOVEL BERBAHASA INDONESIA.
-
-Jangan tulis apa pun selain cerita.
+Tidak boleh ada teks lain sebelum atau sesudah cerita.
 `;
 
 
@@ -332,9 +463,11 @@ async function tulisCepat(
     body.judul ||
     "Tulisan Baru";
 
+
   const prompt =
     body.prompt ||
     "";
+
 
   if (!prompt.trim()) {
 
@@ -343,47 +476,48 @@ async function tulisCepat(
     );
   }
 
+
+  /*
+   * PERHATIKAN:
+   * Yang dikirim sebagai prompt user
+   * hanya permintaan cerita.
+   */
+
   const userPrompt = `
-Tulis sebuah cerita novel berdasarkan ide berikut:
+Tulis cerita novel berdasarkan ide berikut.
 
-${prompt}
-
-Judul cerita:
+Judul:
 ${judul}
 
-Kembangkan menjadi prosa novel yang utuh.
+Ide cerita:
+${prompt}
 
-Langsung mulai dari cerita.
+Tulis langsung cerita tersebut.
+Mulai dari adegan pertama.
+Gunakan prosa novel berbahasa Indonesia.
 `;
 
 
   const hasil =
     await callGroq(
-      [
-        {
-          role:
-            "system",
-
-          content:
-            NOVEL_SYSTEM_PROMPT
-        },
-
-        {
-          role:
-            "user",
-
-          content:
-            userPrompt
-        }
-      ],
+      NOVEL_SYSTEM_PROMPT,
+      userPrompt,
       env,
       4000
     );
 
 
-  /* =================================================
-     SIMPAN RIWAYAT
-  ================================================= */
+  if (!hasil.trim()) {
+
+    throw new Error(
+      "Hasil cerita kosong."
+    );
+  }
+
+
+  /*
+   * SIMPAN RIWAYAT
+   */
 
   try {
 
@@ -402,6 +536,7 @@ Langsung mulai dari cerita.
 
         body:
           JSON.stringify({
+
             user_id:
               user.id,
 
@@ -431,9 +566,9 @@ Langsung mulai dari cerita.
   }
 
 
-  /* =================================================
-     CATAT PENGGUNAAN AI
-  ================================================= */
+  /*
+   * CATAT PENGGUNAAN AI
+   */
 
   try {
 
@@ -452,6 +587,7 @@ Langsung mulai dari cerita.
 
         body:
           JSON.stringify({
+
             user_id:
               user.id,
 
@@ -479,6 +615,7 @@ Langsung mulai dari cerita.
 
 
   return {
+
     success:
       true,
 
@@ -507,62 +644,40 @@ async function buatNovel(
   env
 ) {
 
-  const judul =
-    body.judul ||
-    "Novel Baru";
-
-  const genre =
-    body.genre ||
-    "";
-
-  const gaya =
-    body.gaya ||
-    "";
-
-  const nuansa =
-    body.nuansa ||
-    "";
-
-  const mode =
-    body.mode ||
-    "";
-
-  const premis =
-    body.premis ||
-    "";
-
-  const targetBab =
-    Number(
-      body.target_bab ||
-      10
-    );
-
-
-  const insertData = {
+  const dataNovel = {
 
     user_id:
       user.id,
 
     judul:
-      judul,
+      body.judul ||
+      "Novel Baru",
 
     genre:
-      genre,
+      body.genre ||
+      "",
 
     gaya:
-      gaya,
+      body.gaya ||
+      "",
 
     nuansa:
-      nuansa,
+      body.nuansa ||
+      "",
 
     mode:
-      mode,
+      body.mode ||
+      "",
 
     premis:
-      premis,
+      body.premis ||
+      "",
 
     target_bab:
-      targetBab,
+      Number(
+        body.target_bab ||
+        10
+      ),
 
     bab_selesai:
       0,
@@ -588,7 +703,7 @@ async function buatNovel(
 
         body:
           JSON.stringify(
-            insertData
+            dataNovel
           )
       }
     );
@@ -608,11 +723,14 @@ async function buatNovel(
 
 
   return {
+
     success:
       true,
 
     novel:
-      Array.isArray(data)
+      Array.isArray(
+        data
+      )
         ? data[0]
         : data
   };
@@ -655,6 +773,7 @@ async function ambilNovel(
 
 
   return {
+
     success:
       true,
 
@@ -675,15 +794,11 @@ async function ambilKarakter(
   env
 ) {
 
-  const novelId =
-    body.novel_id;
-
-
   const response =
     await supabaseUserFetch(
       "novel_karakter?select=*&novel_id=eq." +
       encodeURIComponent(
-        novelId
+        body.novel_id
       ) +
       "&user_id=eq." +
       encodeURIComponent(
@@ -709,6 +824,7 @@ async function ambilKarakter(
 
 
   return {
+
     success:
       true,
 
@@ -729,15 +845,11 @@ async function ambilMemory(
   env
 ) {
 
-  const novelId =
-    body.novel_id;
-
-
   const response =
     await supabaseUserFetch(
       "novel_memory?select=*&novel_id=eq." +
       encodeURIComponent(
-        novelId
+        body.novel_id
       ) +
       "&user_id=eq." +
       encodeURIComponent(
@@ -763,6 +875,7 @@ async function ambilMemory(
 
 
   return {
+
     success:
       true,
 
@@ -783,15 +896,11 @@ async function ambilBabTerakhir(
   env
 ) {
 
-  const novelId =
-    body.novel_id;
-
-
   const response =
     await supabaseUserFetch(
       "novel_bab?select=*&novel_id=eq." +
       encodeURIComponent(
-        novelId
+        body.novel_id
       ) +
       "&user_id=eq." +
       encodeURIComponent(
@@ -817,11 +926,14 @@ async function ambilBabTerakhir(
 
 
   return {
+
     success:
       true,
 
     bab:
-      Array.isArray(data)
+      Array.isArray(
+        data
+      )
         ? data[0] ||
           null
         : null
@@ -844,14 +956,6 @@ async function tulisBab(
     body.novel_id;
 
 
-  if (!novelId) {
-
-    throw new Error(
-      "ID novel tidak ditemukan."
-    );
-  }
-
-
   const nomorBab =
     Number(
       body.nomor_bab ||
@@ -872,9 +976,10 @@ async function tulisBab(
   let karakterText =
     "";
 
+
   try {
 
-    const karakterResponse =
+    const response =
       await supabaseUserFetch(
         "novel_karakter?select=nama,umur,jenis_kelamin,peran,sifat,latar_belakang,hubungan,tujuan,rahasia,catatan&novel_id=eq." +
         encodeURIComponent(
@@ -889,23 +994,21 @@ async function tulisBab(
       );
 
 
-    const karakterData =
-      await karakterResponse.json();
+    const data =
+      await response.json();
 
 
     if (
       Array.isArray(
-        karakterData
+        data
       )
     ) {
 
       karakterText =
-        karakterData
-          .map(
-            k =>
-              `${k.nama || ""}, usia ${k.umur || ""}, ${k.peran || ""}. Sifat: ${k.sifat || ""}. Latar: ${k.latar_belakang || ""}. Hubungan: ${k.hubungan || ""}. Tujuan: ${k.tujuan || ""}.`
-          )
-          .join("\n");
+        data.map(
+          k =>
+            `${k.nama || ""}, usia ${k.umur || ""}, ${k.peran || ""}. Sifat: ${k.sifat || ""}. Latar: ${k.latar_belakang || ""}. Hubungan: ${k.hubungan || ""}. Tujuan: ${k.tujuan || ""}.`
+        ).join("\n");
     }
 
   } catch (error) {
@@ -920,9 +1023,10 @@ async function tulisBab(
   let memoryText =
     "";
 
+
   try {
 
-    const memoryResponse =
+    const response =
       await supabaseUserFetch(
         "novel_memory?select=tipe,judul,isi,penting,bab_terkait&novel_id=eq." +
         encodeURIComponent(
@@ -938,23 +1042,21 @@ async function tulisBab(
       );
 
 
-    const memoryData =
-      await memoryResponse.json();
+    const data =
+      await response.json();
 
 
     if (
       Array.isArray(
-        memoryData
+        data
       )
     ) {
 
       memoryText =
-        memoryData
-          .map(
-            m =>
-              `[${m.tipe || ""}] ${m.judul || ""}: ${m.isi || ""}`
-          )
-          .join("\n");
+        data.map(
+          m =>
+            `[${m.tipe || ""}] ${m.judul || ""}: ${m.isi || ""}`
+        ).join("\n");
     }
 
   } catch (error) {
@@ -969,9 +1071,10 @@ async function tulisBab(
   let babTerakhir =
     "";
 
+
   try {
 
-    const previousResponse =
+    const response =
       await supabaseUserFetch(
         "novel_bab?select=judul_bab,isi_bab,nomor_bab&novel_id=eq." +
         encodeURIComponent(
@@ -987,29 +1090,26 @@ async function tulisBab(
       );
 
 
-    const previousData =
-      await previousResponse.json();
+    const data =
+      await response.json();
 
 
     if (
       Array.isArray(
-        previousData
+        data
       ) &&
-      previousData.length
+      data.length
     ) {
 
-      const last =
-        previousData[0];
+      const bab =
+        data[0];
+
 
       babTerakhir =
         `
-BAB SEBELUMNYA:
+Konteks bagian sebelumnya:
 
-Judul:
-${last.judul_bab || ""}
-
-Isi:
-${(last.isi_bab || "")
+${(bab.isi_bab || "")
   .slice(-6500)}
 `;
     }
@@ -1024,65 +1124,43 @@ ${(last.isi_bab || "")
 
 
   const chapterPrompt = `
-Tulis lanjutan cerita novel untuk bagian ${nomorBab}.
+Tulis lanjutan cerita novel.
 
-Judul bagian:
+Bagian:
+${nomorBab}
+
+Judul:
 ${judulBab}
 
-Konteks cerita:
+Konteks:
 ${konteks}
 
 Karakter:
 ${karakterText}
 
-Memory cerita:
+Memory:
 ${memoryText}
 
 ${babTerakhir}
 
-Tulis lanjutan cerita yang benar-benar menyambung dengan kejadian sebelumnya.
+Lanjutkan cerita secara natural.
 
-Panjang target sekitar 1.800 sampai 2.200 kata.
+Target panjang sekitar 1.800 sampai 2.200 kata.
 
-Jangan membuat ringkasan.
-
-Jangan membuat outline.
-
-Jangan menulis instruksi.
-
-Jangan menulis penjelasan.
-
-Jangan menulis kata "Bab" sebagai pembuka.
-
-Langsung tulis prosa novel dalam bahasa Indonesia.
+Langsung tulis cerita.
 `;
 
 
   const hasil =
     await callGroq(
-      [
-        {
-          role:
-            "system",
-
-          content:
-            NOVEL_SYSTEM_PROMPT
-        },
-
-        {
-          role:
-            "user",
-
-          content:
-            chapterPrompt
-        }
-      ],
+      NOVEL_SYSTEM_PROMPT,
+      chapterPrompt,
       env,
       5000
     );
 
 
-  const insertResponse =
+  const response =
     await supabaseUserFetch(
       "novel_bab",
       token,
@@ -1127,58 +1205,21 @@ Langsung tulis prosa novel dalam bahasa Indonesia.
     );
 
 
-  const savedData =
-    await insertResponse.json();
+  const saved =
+    await response.json();
 
 
-  if (!insertResponse.ok) {
+  if (!response.ok) {
 
     throw new Error(
-      savedData?.message ||
-      "Tulisan berhasil dibuat tetapi gagal disimpan ke database."
-    );
-  }
-
-
-  /* UPDATE JUMLAH BAB */
-
-  try {
-
-    await supabaseUserFetch(
-      `novel?id=eq.${encodeURIComponent(
-        novelId
-      )}&user_id=eq.${encodeURIComponent(
-        user.id
-      )}`,
-      token,
-      env,
-      {
-        method:
-          "PATCH",
-
-        headers: {
-          "Prefer":
-            "return=minimal"
-        },
-
-        body:
-          JSON.stringify({
-            bab_selesai:
-              nomorBab
-          })
-      }
-    );
-
-  } catch (error) {
-
-    console.log(
-      "Gagal update jumlah bab:",
-      error.message
+      saved?.message ||
+      "Gagal menyimpan bab."
     );
   }
 
 
   return {
+
     success:
       true,
 
@@ -1217,18 +1258,9 @@ async function updateMemory(
   if (!memory) {
 
     throw new Error(
-      "Data memory kosong."
+      "Memory kosong."
     );
   }
-
-
-  const data =
-    {
-      ...memory,
-
-      user_id:
-        user.id
-    };
 
 
   const response =
@@ -1246,42 +1278,47 @@ async function updateMemory(
         },
 
         body:
-          JSON.stringify(
-            data
-          )
+          JSON.stringify({
+
+            ...memory,
+
+            user_id:
+              user.id
+          })
       }
     );
 
 
-  const result =
+  const data =
     await response.json();
 
 
   if (!response.ok) {
 
     throw new Error(
-      result?.message ||
+      data?.message ||
       "Gagal menyimpan memory."
     );
   }
 
 
   return {
+
     success:
       true,
 
     memory:
       Array.isArray(
-        result
+        data
       )
-        ? result[0]
-        : result
+        ? data[0]
+        : data
   };
 }
 
 
 /* =====================================================
-   MAIN HANDLER
+   HANDLE REQUEST
 ===================================================== */
 
 async function handle(
@@ -1313,6 +1350,7 @@ async function handle(
   ) {
 
     return json({
+
       success:
         true,
 
@@ -1345,15 +1383,15 @@ async function handle(
 
   try {
 
-    const authHeader =
+    const authorization =
       request.headers.get(
         "Authorization"
       );
 
 
     if (
-      !authHeader ||
-      !authHeader.startsWith(
+      !authorization ||
+      !authorization.startsWith(
         "Bearer "
       )
     ) {
@@ -1372,7 +1410,7 @@ async function handle(
 
 
     const token =
-      authHeader
+      authorization
         .replace(
           "Bearer ",
           ""
@@ -1395,7 +1433,7 @@ async function handle(
             false,
 
           error:
-            "Sesi login tidak valid. Silakan login kembali."
+            "Sesi login tidak valid."
         },
         401
       );
@@ -1406,118 +1444,103 @@ async function handle(
       await request.json();
 
 
-    const action =
-      body.action;
-
-
-    let result;
-
-
     switch (
-      action
+      body.action
     ) {
 
       case "write":
 
-        result =
+        return json(
           await tulisCepat(
             body,
             user,
             token,
             env
-          );
-
-        break;
+          )
+        );
 
 
       case "buat_novel":
 
-        result =
+        return json(
           await buatNovel(
             body,
             user,
             token,
             env
-          );
-
-        break;
+          )
+        );
 
 
       case "ambil_novel":
 
-        result =
+        return json(
           await ambilNovel(
             user,
             token,
             env
-          );
-
-        break;
+          )
+        );
 
 
       case "ambil_karakter":
 
-        result =
+        return json(
           await ambilKarakter(
             body,
             user,
             token,
             env
-          );
-
-        break;
+          )
+        );
 
 
       case "ambil_memory":
 
-        result =
+        return json(
           await ambilMemory(
             body,
             user,
             token,
             env
-          );
-
-        break;
+          )
+        );
 
 
       case "ambil_bab_terakhir":
 
-        result =
+        return json(
           await ambilBabTerakhir(
             body,
             user,
             token,
             env
-          );
-
-        break;
+          )
+        );
 
 
       case "tulis_bab":
 
-        result =
+        return json(
           await tulisBab(
             body,
             user,
             token,
             env
-          );
-
-        break;
+          )
+        );
 
 
       case "update_memory":
 
-        result =
+        return json(
           await updateMemory(
             body,
             user,
             token,
             env
-          );
-
-        break;
+          )
+        );
 
 
       default:
@@ -1528,16 +1551,11 @@ async function handle(
               false,
 
             error:
-              `Action "${action}" tidak dikenali.`
+              `Action "${body.action}" tidak dikenali.`
           },
           400
         );
     }
-
-
-    return json(
-      result
-    );
 
   } catch (error) {
 
@@ -1563,7 +1581,7 @@ async function handle(
 
 
 /* =====================================================
-   CLOUDFLARE WORKER
+   CLOUDFLARE
 ===================================================== */
 
 export default {
