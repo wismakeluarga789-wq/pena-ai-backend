@@ -777,6 +777,58 @@ async function tulisBabBerikutnya(request, env, user, body) {
   const karakter = Array.isArray(karakterData) ? karakterData : [];
 
   // ===================================================
+  // AMBIL STORY BIBLE / KANON NOVEL
+  // ===================================================
+
+  const storyBibleResponse = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/novel_story_bible?novel_id=eq.${encodeURIComponent(novelId)}&user_id=eq.${encodeURIComponent(user.id)}&select=world_description,world_rules,locations,factions,relationships,timeline,canon_facts,secrets,continuity_notes&limit=1`,
+    {
+      method: "GET",
+      headers: supabaseHeaders
+    }
+  );
+
+  const storyBibleResponseText = await storyBibleResponse.text();
+  let storyBibleData;
+
+  try {
+    storyBibleData = storyBibleResponseText ? JSON.parse(storyBibleResponseText) : [];
+  } catch (error) {
+    throw new Error("Data Story Bible dari Supabase tidak dapat dibaca. Bab belum ditulis.");
+  }
+
+  if (!storyBibleResponse.ok) {
+    throw new Error(
+      storyBibleData?.message ||
+      storyBibleData?.hint ||
+      "Gagal mengambil Story Bible. Pastikan tabel novel_story_bible sudah dibuat melalui SQL setup. Bab belum ditulis."
+    );
+  }
+
+  const storyBible = Array.isArray(storyBibleData) ? (storyBibleData[0] || null) : null;
+  const storyBibleSections = [
+    ["DUNIA CERITA", "world_description"],
+    ["ATURAN DUNIA", "world_rules"],
+    ["LOKASI PENTING", "locations"],
+    ["KELOMPOK / ORGANISASI / PERGURUAN", "factions"],
+    ["HUBUNGAN ANTARTOKOH", "relationships"],
+    ["KRONOLOGI", "timeline"],
+    ["FAKTA KANON (TIDAK BOLEH BERUBAH)", "canon_facts"],
+    ["RAHASIA / MISTERI YANG BELUM TERUNGKAP", "secrets"],
+    ["CATATAN KONTINUITAS EDITOR", "continuity_notes"]
+  ];
+
+  const konteksStoryBible = storyBible
+    ? storyBibleSections
+        .map(([label, key]) => {
+          const value = String(storyBible[key] || "").trim();
+          return value ? `${label}:\n${value.slice(0, 4500)}` : "";
+        })
+        .filter(Boolean)
+        .join("\n\n") || "Story Bible masih kosong."
+    : "Belum ada Story Bible yang disimpan untuk novel ini. Jangan mengarang fakta kanon baru yang bertentangan dengan bab sebelumnya.";
+
+  // ===================================================
   // BAB KONTEKS
   // ===================================================
 
@@ -889,6 +941,9 @@ ${konteksJudul}
 KARAKTER
 ${konteksKarakter}
 
+STORY BIBLE — FAKTA RESMI DAN PANDUAN KONTINUITAS
+${konteksStoryBible}
+
 BAB-BAB TERAKHIR
 ${konteksBab}
 
@@ -897,6 +952,9 @@ TUGAS UTAMA
 Tulis Bab ${nomorBabBaru} sebagai kelanjutan langsung dari cerita.
 Jangan mengulang bab sebelumnya.
 Pertahankan fakta cerita yang sudah ada.
+Jadikan Story Bible sebagai acuan kanon untuk dunia, aturan, lokasi, kelompok, hubungan, kronologi, fakta tetap, serta rahasia.
+Jangan membuat fakta baru yang bertentangan dengan Story Bible atau bab sebelumnya.
+Pastikan setiap tokoh hanya bertindak berdasarkan hal yang sudah ia ketahui.
 Pertahankan kepribadian dan hubungan karakter.
 Jika bab terakhir meninggalkan konflik, pertanyaan, rahasia, keputusan, ancaman, atau konsekuensi, biarkan hal tersebut memengaruhi bab baru.
 Bangun perkembangan cerita secara bertahap.
