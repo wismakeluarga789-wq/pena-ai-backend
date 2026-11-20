@@ -1,7 +1,3 @@
-// =====================================================
-// PENA AI BACKEND - CLOUDFLARE WORKER
-// =====================================================
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://pena-ai-engine.pages.dev",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
@@ -11,7 +7,7 @@ const corsHeaders = {
 
 
 // =====================================================
-// RESPONSE JSON
+// JSON RESPONSE
 // =====================================================
 
 function json(data, status = 200) {
@@ -44,7 +40,7 @@ function hitungKata(text) {
 
 
 // =====================================================
-// MEMBERSIHKAN HASIL AI
+// BERSIHKAN HASIL AI
 // =====================================================
 
 function bersihkanHasilAI(text) {
@@ -55,9 +51,8 @@ function bersihkanHasilAI(text) {
 
   let hasil = String(text).trim();
 
-
   // ---------------------------------------------------
-  // 1. HAPUS BLOK INSTRUKSI META DI AWAL
+  // CARI INSTRUKSI META YANG SERING DITULIS AI
   // ---------------------------------------------------
 
   const polaInstruksi = [
@@ -96,62 +91,62 @@ function bersihkanHasilAI(text) {
       }
 
     }
-
   }
 
 
   // ---------------------------------------------------
-  // 2. KALAU ADA INSTRUKSI, CARI AWAL CERITA
+  // KALAU ADA INSTRUKSI META,
+  // CARI AWAL CERITA
   // ---------------------------------------------------
 
   if (posisiInstruksi >= 0) {
 
-    const setelahInstruksi =
+    const bagian =
       hasil.substring(posisiInstruksi);
 
     const polaAwalCerita =
       /(?:^|\n\n)(Kota yang|Pagi itu|Siang itu|Sore itu|Malam itu|Hari itu|Ketika |Saat |Di pagi |Di siang |Di sore |Di malam |Di sebuah |Tahun \d{4})/i;
 
     const awalCerita =
-      setelahInstruksi.match(polaAwalCerita);
+      bagian.match(polaAwalCerita);
 
     if (awalCerita) {
 
       hasil =
-        setelahInstruksi.substring(
+        bagian.substring(
           awalCerita.index
         );
 
     } else {
 
-      // Jika tidak menemukan pola awal cerita,
-      // hapus seluruh baris instruksi Inggris.
+      // Kalau awal cerita tidak ditemukan,
+      // buang baris-baris instruksi Inggris.
 
       hasil =
-        setelahInstruksi
+        bagian
           .split("\n")
           .filter(line => {
 
-            const teks =
+            const t =
               line.trim();
 
-            if (!teks) return true;
+            if (!t) {
+              return true;
+            }
 
             return !(
               /^(We need|Let's |Here is|Below is|Must |Make sure|Provide |End with|Just |The story)/i
-                .test(teks)
+                .test(t)
             );
 
           })
           .join("\n");
-
     }
-
   }
 
 
   // ---------------------------------------------------
-  // 3. HAPUS KALIMAT META YANG MASIH TERSISA
+  // HAPUS SISA KALIMAT META
   // ---------------------------------------------------
 
   hasil = hasil
@@ -178,72 +173,79 @@ function bersihkanHasilAI(text) {
 
 
   // ---------------------------------------------------
-  // 4. HAPUS MARKDOWN HEADING
+  // HAPUS MARKDOWN HEADING
   // ---------------------------------------------------
 
-  hasil = hasil.replace(
-    /^#{1,6}\s+.*$/gm,
-    ""
-  );
-
-
-  // ---------------------------------------------------
-  // 5. HAPUS BULLET
-  // ---------------------------------------------------
-
-  hasil = hasil.replace(
-    /^\s*[-*•]\s+/gm,
-    ""
-  );
+  hasil =
+    hasil.replace(
+      /^#{1,6}\s+.*$/gm,
+      ""
+    );
 
 
   // ---------------------------------------------------
-  // 6. HAPUS NUMBERING
+  // HAPUS BULLET
   // ---------------------------------------------------
 
-  hasil = hasil.replace(
-    /^\s*\d+[.)]\s+/gm,
-    ""
-  );
-
-
-  // ---------------------------------------------------
-  // 7. HAPUS GARIS MARKDOWN
-  // ---------------------------------------------------
-
-  hasil = hasil.replace(
-    /^\s*[-_*]{3,}\s*$/gm,
-    ""
-  );
+  hasil =
+    hasil.replace(
+      /^\s*[-*•]\s+/gm,
+      ""
+    );
 
 
   // ---------------------------------------------------
-  // 8. HAPUS PEMBUKA META BAHASA INDONESIA
+  // HAPUS NUMBERING
   // ---------------------------------------------------
 
-  hasil = hasil.replace(
-    /^(?:Berikut adalah|Berikut cerita|Berikut kisah|Berikut novel|Ini adalah cerita).*?:?\s*/i,
-    ""
-  );
-
-
-  // ---------------------------------------------------
-  // 9. HAPUS KATA "BAB" JIKA HANYA HEADING
-  // ---------------------------------------------------
-
-  hasil = hasil.replace(
-    /^\s*Bab\s+\d+.*$/gim,
-    ""
-  );
+  hasil =
+    hasil.replace(
+      /^\s*\d+[.)]\s+/gm,
+      ""
+    );
 
 
   // ---------------------------------------------------
-  // 10. BERSIHKAN SPASI BERLEBIHAN
+  // HAPUS GARIS PEMISAH MARKDOWN
   // ---------------------------------------------------
 
-  hasil = hasil
-    .replace(/\n{4,}/g, "\n\n")
-    .trim();
+  hasil =
+    hasil.replace(
+      /^\s*[-_*]{3,}\s*$/gm,
+      ""
+    );
+
+
+  // ---------------------------------------------------
+  // HAPUS PEMBUKA META BAHASA INDONESIA
+  // ---------------------------------------------------
+
+  hasil =
+    hasil.replace(
+      /^(?:Berikut adalah|Berikut cerita|Berikut kisah|Berikut novel|Ini adalah cerita).*?:?\s*/i,
+      ""
+    );
+
+
+  // ---------------------------------------------------
+  // HAPUS HEADING "BAB"
+  // ---------------------------------------------------
+
+  hasil =
+    hasil.replace(
+      /^\s*Bab\s+\d+.*$/gim,
+      ""
+    );
+
+
+  // ---------------------------------------------------
+  // RAPikan BARIS KOSONG
+  // ---------------------------------------------------
+
+  hasil =
+    hasil
+      .replace(/\n{4,}/g, "\n\n")
+      .trim();
 
 
   return hasil;
@@ -251,15 +253,17 @@ function bersihkanHasilAI(text) {
 
 
 // =====================================================
-// AMBIL USER DARI SUPABASE
+// AMBIL USER SUPABASE
 // =====================================================
 
 async function getUser(request, env) {
 
-  const auth =
-    request.headers.get("Authorization");
+  const authorization =
+    request.headers.get(
+      "Authorization"
+    );
 
-  if (!auth) {
+  if (!authorization) {
     return null;
   }
 
@@ -270,15 +274,20 @@ async function getUser(request, env) {
         method: "GET",
 
         headers: {
-          "Authorization": auth,
-          "apikey": env.SUPABASE_ANON_KEY
+          "Authorization":
+            authorization,
+
+          "apikey":
+            env.SUPABASE_ANON_KEY
         }
       }
     );
 
+
   if (!response.ok) {
     return null;
   }
+
 
   return await response.json();
 }
@@ -302,8 +311,11 @@ async function callGroq(
         method: "POST",
 
         headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${env.GROQ_API_KEY}`
+          "Content-Type":
+            "application/json",
+
+          "Authorization":
+            `Bearer ${env.GROQ_API_KEY}`
         },
 
         body: JSON.stringify({
@@ -342,14 +354,16 @@ async function callGroq(
   }
 
 
-  // -----------------------------------------------
-  // AMBIL OUTPUT DARI RESPONSE API
-  // -----------------------------------------------
-
   let hasil = "";
 
 
-  if (typeof data.output_text === "string") {
+  // -----------------------------------------------
+  // FORMAT OUTPUT_TEXT
+  // -----------------------------------------------
+
+  if (
+    typeof data.output_text === "string"
+  ) {
 
     hasil =
       data.output_text;
@@ -357,7 +371,14 @@ async function callGroq(
   }
 
 
-  if (!hasil && Array.isArray(data.output)) {
+  // -----------------------------------------------
+  // FORMAT OUTPUT ARRAY
+  // -----------------------------------------------
+
+  if (
+    !hasil &&
+    Array.isArray(data.output)
+  ) {
 
     for (
       const item of data.output
@@ -425,15 +446,13 @@ Bangun suasana tempat dan waktu.
 
 Bangun karakter, emosi, konflik, tindakan, pikiran, dan perkembangan hubungan antartokoh.
 
-Cerita harus terasa seperti novel sungguhan, bukan seperti artikel atau laporan.
+Cerita harus terasa seperti novel sungguhan.
 
 Jangan menjelaskan proses penulisan.
 
 Jangan menjelaskan instruksi.
 
 Jangan menjelaskan prompt.
-
-Jangan menjelaskan aturan.
 
 Jangan memberikan analisis.
 
@@ -467,7 +486,7 @@ Jangan membuat heading.
 
 Jangan memulai dengan kata "Bab".
 
-Jangan menggunakan kalimat pembuka seperti:
+Jangan menggunakan kalimat:
 
 "We need to write"
 
@@ -497,7 +516,7 @@ Jangan menggunakan kalimat pembuka seperti:
 
 "Just continuous story paragraphs"
 
-Semua kalimat tersebut adalah instruksi internal dan TIDAK BOLEH muncul dalam hasil akhir.
+Kalimat-kalimat tersebut adalah instruksi internal dan TIDAK BOLEH muncul dalam hasil akhir.
 
 Hasil akhir hanya boleh berupa cerita novel berbahasa Indonesia.
 
@@ -516,12 +535,13 @@ Mulai langsung dengan cerita.
 async function tulisCepat(
   request,
   env,
-  user
+  user,
+  body
 ) {
 
-  const body =
-    await request.json();
-
+  // PENTING:
+  // body TIDAK dipanggil request.json() lagi.
+  // Body sudah dibaca satu kali oleh fetch() utama.
 
   const judul =
     String(
@@ -542,7 +562,8 @@ async function tulisCepat(
     return json(
       {
         success: false,
-        error: "Ide tulisan belum diisi."
+        error:
+          "Ide tulisan belum diisi."
       },
       400
     );
@@ -551,7 +572,7 @@ async function tulisCepat(
 
 
   // ---------------------------------------------------
-  // PROMPT USER BERSIH
+  // USER PROMPT BERSIH
   // ---------------------------------------------------
 
   const userPrompt = `
@@ -569,7 +590,7 @@ Mulai dari adegan pertama.
 
 Gunakan narasi dan dialog yang alami.
 
-Kembangkan karakter, suasana, konflik, emosi, dan kejadian secara bertahap.
+Kembangkan karakter, suasana, konflik, emosi, tindakan, dan kejadian secara bertahap.
 
 Jangan memberikan penjelasan sebelum cerita.
 
@@ -586,7 +607,7 @@ OUTPUT HANYA CERITA.
 
 
   // ---------------------------------------------------
-  // PANGGIL AI
+  // PANGGIL GROQ
   // ---------------------------------------------------
 
   const hasilMentah =
@@ -599,7 +620,7 @@ OUTPUT HANYA CERITA.
 
 
   // ---------------------------------------------------
-  // BERSIHKAN HASIL
+  // BERSIHKAN OUTPUT
   // ---------------------------------------------------
 
   const hasilTulisan =
@@ -618,7 +639,7 @@ OUTPUT HANYA CERITA.
 
 
   // ---------------------------------------------------
-  // SIMPAN RIWAYAT
+  // SIMPAN KE SUPABASE
   // ---------------------------------------------------
 
   try {
@@ -629,6 +650,7 @@ OUTPUT HANYA CERITA.
         method: "POST",
 
         headers: {
+
           "apikey":
             env.SUPABASE_ANON_KEY,
 
@@ -644,29 +666,30 @@ OUTPUT HANYA CERITA.
             "return=minimal"
         },
 
-        body: JSON.stringify({
+        body:
+          JSON.stringify({
 
-          user_id:
-            user.id,
+            user_id:
+              user.id,
 
-          judul:
-            judul,
+            judul:
+              judul,
 
-          jenis:
-            "Novel",
+            jenis:
+              "Novel",
 
-          prompt:
-            prompt,
+            prompt:
+              prompt,
 
-          hasil_tulisan:
-            hasilTulisan,
+            hasil_tulisan:
+              hasilTulisan,
 
-          jumlah_kata:
-            hitungKata(
-              hasilTulisan
-            )
+            jumlah_kata:
+              hitungKata(
+                hasilTulisan
+              )
 
-        })
+          })
       }
     );
 
@@ -681,7 +704,7 @@ OUTPUT HANYA CERITA.
 
 
   // ---------------------------------------------------
-  // RESPONSE KE FRONTEND
+  // KIRIM KE FRONTEND
   // ---------------------------------------------------
 
   return json({
@@ -707,7 +730,6 @@ OUTPUT HANYA CERITA.
       )
 
   });
-
 }
 
 
@@ -721,19 +743,26 @@ async function ambilRiwayat(
   user
 ) {
 
+  const authorization =
+    request.headers.get(
+      "Authorization"
+    );
+
+
   const response =
     await fetch(
       `${env.SUPABASE_URL}/rest/v1/riwayat_penulisan?user_id=eq.${encodeURIComponent(user.id)}&select=*&order=created_at.desc`,
       {
+        method: "GET",
+
         headers: {
 
           "apikey":
             env.SUPABASE_ANON_KEY,
 
           "Authorization":
-            request.headers.get(
-              "Authorization"
-            )
+            authorization
+
         }
       }
     );
@@ -743,28 +772,39 @@ async function ambilRiwayat(
     await response.json();
 
 
+  if (!response.ok) {
+
+    return json(
+      {
+        success:
+          false,
+
+        data:
+          [],
+
+        error:
+          data
+      },
+      response.status
+    );
+
+  }
+
+
   return json({
 
     success:
-      response.ok,
+      true,
 
     data:
-      response.ok
-        ? data
-        : [],
-
-    error:
-      response.ok
-        ? null
-        : data
+      data
 
   });
-
 }
 
 
 // =====================================================
-// MAIN WORKER
+// MAIN CLOUDFLARE WORKER
 // =====================================================
 
 export default {
@@ -774,9 +814,9 @@ export default {
     env
   ) {
 
-    // -----------------------------------------------
-    // CORS PREFLIGHT
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // OPTIONS / CORS
+    // -------------------------------------------------
 
     if (
       request.method === "OPTIONS"
@@ -785,7 +825,9 @@ export default {
       return new Response(
         null,
         {
-          status: 204,
+          status:
+            204,
+
           headers:
             corsHeaders
         }
@@ -794,9 +836,9 @@ export default {
     }
 
 
-    // -----------------------------------------------
+    // -------------------------------------------------
     // GET
-    // -----------------------------------------------
+    // -------------------------------------------------
 
     if (
       request.method === "GET"
@@ -818,9 +860,9 @@ export default {
     }
 
 
-    // -----------------------------------------------
-    // HANYA POST
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // POST SAJA
+    // -------------------------------------------------
 
     if (
       request.method !== "POST"
@@ -828,8 +870,11 @@ export default {
 
       return json(
         {
-          success: false,
-          error: "Method tidak diizinkan."
+          success:
+            false,
+
+          error:
+            "Method tidak diizinkan."
         },
         405
       );
@@ -837,9 +882,9 @@ export default {
     }
 
 
-    // -----------------------------------------------
-    // AUTH
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // CEK USER
+    // -------------------------------------------------
 
     const user =
       await getUser(
@@ -852,8 +897,11 @@ export default {
 
       return json(
         {
-          success: false,
-          error: "Sesi login tidak valid. Silakan login kembali."
+          success:
+            false,
+
+          error:
+            "Sesi login tidak valid. Silakan login kembali."
         },
         401
       );
@@ -861,9 +909,9 @@ export default {
     }
 
 
-    // -----------------------------------------------
-    // BACA ACTION
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // BACA BODY HANYA SEKALI
+    // -------------------------------------------------
 
     let body;
 
@@ -876,8 +924,11 @@ export default {
 
       return json(
         {
-          success: false,
-          error: "Data JSON tidak valid."
+          success:
+            false,
+
+          error:
+            "Data JSON tidak valid."
         },
         400
       );
@@ -889,9 +940,9 @@ export default {
       body.action;
 
 
-    // -----------------------------------------------
+    // -------------------------------------------------
     // ROUTING
-    // -----------------------------------------------
+    // -------------------------------------------------
 
     try {
 
@@ -902,7 +953,8 @@ export default {
           return await tulisCepat(
             request,
             env,
-            user
+            user,
+            body
           );
 
 
@@ -919,7 +971,9 @@ export default {
 
           return json(
             {
-              success: false,
+              success:
+                false,
+
               error:
                 "Action tidak dikenal: " +
                 action
@@ -939,7 +993,9 @@ export default {
 
       return json(
         {
-          success: false,
+          success:
+            false,
+
           error:
             error.message ||
             "Terjadi kesalahan pada backend."
